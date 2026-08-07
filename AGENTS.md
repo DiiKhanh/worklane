@@ -81,11 +81,19 @@ When a change has a design dimension (new feature, business flow, architecture,
 or API), create or update documentation:
 - **Docs / PRD**: context, goals, requirements, scope.
 - **Technical design**: architecture, components, data model, key decisions.
-- **Diagrams**: prefer **Mermaid** so they stay version-controlled:
-  - **Sequence diagram** (`sequenceDiagram`) for interaction / API / auth flows.
-  - **Flowchart** (`flowchart`) for business logic.
-  - **ER diagram** (`erDiagram`) for data models.
-  - **State diagram** (`stateDiagram-v2`) for state machines.
+- **Diagrams**: use **Mermaid** or **Excalidraw**, whichever fits the need:
+  - **Mermaid** (default) for precise, version-controlled diagrams embedded in Markdown:
+    - **Sequence diagram** (`sequenceDiagram`) for interaction / API / auth flows.
+    - **Flowchart** (`flowchart`) for business logic.
+    - **ER diagram** (`erDiagram`) for data models.
+    - **State diagram** (`stateDiagram-v2`) for state machines.
+  - **Excalidraw** when a free-form, hand-drawn / whiteboard-style sketch communicates better -
+    high-level architecture, system context, or brainstorming visuals. Save the source as an
+    `.excalidraw` file (JSON) under `docs/` so it stays editable, and export a `.png`/`.svg`
+    alongside it to embed in the Markdown.
+
+Pick the tool per need: Mermaid when the structure is well-defined and should diff cleanly in
+git; Excalidraw when a looser, more visual sketch is clearer.
 
 Example of the expected Mermaid block:
 
