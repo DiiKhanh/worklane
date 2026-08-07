@@ -61,7 +61,7 @@ sequenceDiagram
 
 | Area | Decision |
 |------|----------|
-| **Channel** | **Email only** (Resend or SMTP, free-tier). SMS is deferred so provider brand-name approval never blocks the MVP. |
+| **Channel** | **Email only** via **Resend** (hosted API, free-tier). SMS is deferred so provider brand-name approval never blocks the MVP. |
 | **Services** | Two: `otp-api` (go-zero HTTP, sync path) + `dispatcher` (go-zero Kafka consumer, async path). **No** worker/cron yet. |
 | **Gateway** | APISIX: TLS termination, API-key auth plugin, coarse edge rate limiting, routing to `otp-api`. |
 | **Kafka** | Topics `otp.requested`, `otp.sent`, `otp.failed`. `otp.dlq` is **declared** and the dispatcher may publish to it on failure, but there is **no drainer** in the MVP. |
@@ -70,7 +70,7 @@ sequenceDiagram
 | **Core domain** ⭐ | Crypto-random code generation, hash-only storage, constant-time verification, **four-layer rate limiting** (per recipient / per tenant / resend cooldown / verify-attempt lock), `Idempotency-Key`, and the `requested → sent \| failed → verified \| expired` state model. Fully unit-tested. |
 | **Tenant / API key** | Created via a **CLI seed script** (or a protected admin endpoint). The data model stays multi-tenant; only the *creation UX* is deferred. |
 | **Dashboard** | New Next.js + shadcn/ui app (from a shadcn block). **Three read-only screens:** (1) API keys list, (2) OTP request history, (3) delivery-logs status via React Query polling. Stack per §8 of the design spec (TanStack Query, Zustand, RHF+Zod, TanStack Table). |
-| **Deploy** | **Code-first:** build and green the thread on docker-compose locally, then package Helm charts and deploy to **k3s** on a VPS, reachable at `https://<domain>` over HTTPS. |
+| **Deploy** | **Code-first:** build and green the thread on docker-compose locally, then package Helm charts and deploy to **k3s** on a self-hosted machine, reachable at `https://<domain>` over HTTPS. The **dashboard deploys separately to Vercel**. Hosting/networking (self-hosted k3s host, Cloudflare, Tenten domain) is specified in its own doc - see [2026-08-07-self-hosted-infra-setup.md](./2026-08-07-self-hosted-infra-setup.md). |
 | **Testing** | Unit (domain logic, 80% target), integration via testcontainers (Redis / Postgres / Kafka), end-to-end `send → verify` through APISIX against running services. |
 
 **Why keep the full core domain in the MVP:** it is pure, infra-independent code - cheap to write
@@ -108,9 +108,14 @@ Cutting it to "go faster" would cut the wrong thing.
 6. Next.js dashboard (3 read-only screens) wired to the read APIs.
 7. **Fast-follow:** add `worker/cron`.
 
-## 7. Open questions
+## 7. Resolved decisions
 
-1. **Email provider:** Resend (hosted API, quick) vs SMTP (standard, self-hosted)?
-2. **VPS provider/region** for the k3s host?
-3. **Domain layout:** separate hosts for API and dashboard (e.g. `api.otp.<domain>` vs
-   `otp.<domain>`)?
+1. **Email provider:** **Resend** (hosted API).
+2. **k3s host:** **self-hosted on a personal machine** (not a cloud VPS); domain registered at
+   **Tenten**, exposed via **Cloudflare**. Full topology and setup live in
+   [2026-08-07-self-hosted-infra-setup.md](./2026-08-07-self-hosted-infra-setup.md).
+3. **Dashboard hosting:** **Vercel** (separate from the cluster). This makes the dashboard→API
+   call **cross-origin**, so **CORS** for the Vercel origin must be configured on
+   APISIX / `otp-api`.
+4. **Edge TLS:** terminated at **Cloudflare** (not APISIX). APISIX remains the business gateway
+   (API-key auth, rate limiting, routing) behind the Cloudflare edge.
