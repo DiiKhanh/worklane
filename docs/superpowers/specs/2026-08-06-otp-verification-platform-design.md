@@ -67,7 +67,7 @@ Client ──HTTPS──► APISIX (edge gateway)
                         • drain otp.dlq with backoff retry
                         • scheduled cleanup of expired OTP + stale audit rows
 
-Dashboard (existing Next.js source) ──► otp-api REST (delivery-logs, api-keys) [polling]
+Dashboard (Next.js + shadcn/ui) ──► otp-api REST (delivery-logs, api-keys) [React Query polling]
 ```
 
 ### Component responsibilities
@@ -155,12 +155,48 @@ must be implemented for real, not mocked.
 
 ## 8. Dashboard (frontend)
 
-- Reuse the author's **existing Next.js dashboard source** (adapt, do not build from scratch).
+The author's **existing admin web is Vue**, but it is **not reused** here. For the fastest MVP and
+a clean separation from that codebase, the OTP dashboard is a **new Next.js application**,
+bootstrapped from a **shadcn/ui dashboard block** (https://ui.shadcn.com/blocks) so most of the
+layout, sidebar, and table scaffolding comes ready-made.
+
+### Stack (MVP)
+
+| Concern | Choice | Why |
+|---------|--------|-----|
+| Framework | **Next.js (App Router, TypeScript)** | Fast scaffolding, file-based routing, large ecosystem; can start as a pure SPA-style client and add SSR later without a rewrite. |
+| UI components | **shadcn/ui** (Radix + Tailwind) | Copy-in components the project *owns* (no runtime UI-lib lock-in), accessible by default; the ready **blocks** template removes most boilerplate. |
+| Server state | **TanStack Query (React Query)** | Caching, request dedup, retries, and **`refetchInterval` polling** — a natural fit for live delivery-log status without building WebSockets. |
+| Client/UI state | **Zustand** | Lightweight store for UI-only state (filters, selected tenant, modal state, in-memory API token) with no Redux boilerplate. |
+| Forms & validation | **React Hook Form + Zod** | Minimal re-renders, schema-first validation shared with types (create API key, filter forms). |
+| Data tables | **TanStack Table** | Headless sorting/filtering/pagination for OTP history and delivery-logs; pairs cleanly with React Query. |
+
+**Key separation of concerns:** server data (delivery-logs, api-keys, OTP history) lives **only** in
+React Query's cache; Zustand holds **only** client/UI state. Do not copy fetched server data into
+Zustand — that duplicates the source of truth and causes stale-state bugs. This split is the single
+most important frontend design rule here.
+
+### Responsibilities
+
 - Consumes `otp-api` REST endpoints: API-key management, OTP request history, delivery status.
-- **MVP delivery status = polling** the `delivery-logs` API. Real-time push (SSE/WebSocket) is a
-  later enhancement if needed.
-- **Open integration detail (TBD):** exact location/repo of the existing dashboard source, and its
-  auth model, to be confirmed before integration.
+- **MVP delivery status = polling** the `delivery-logs` API via React Query `refetchInterval`.
+  Real-time push (SSE/WebSocket) is a later enhancement if needed.
+
+### Data flow
+
+```mermaid
+flowchart LR
+    subgraph browser["Next.js dashboard"]
+        UI["shadcn/ui pages\n(TanStack Table views)"]
+        RQ["React Query cache\n(server state)"]
+        ZS["Zustand store\n(UI state: filters, token)"]
+        UI -->|read/write UI state| ZS
+        UI -->|useQuery / useMutation| RQ
+    end
+    RQ -->|GET delivery-logs, api-keys\npolling refetchInterval| API["otp-api REST"]
+    RQ -->|POST create/revoke api-key| API
+    API -->|JSON| RQ
+```
 
 ## 9. Observability (Phase 2)
 
@@ -202,6 +238,9 @@ must be implemented for real, not mocked.
 
 ## 14. Open Questions
 
-1. Exact location + auth model of the existing Next.js dashboard source (§8).
+1. ~~Exact location + auth model of the existing dashboard source.~~ **Resolved:** the existing Vue
+   admin is not reused; the dashboard is a new Next.js app (see §8). Dashboard **login/auth** is
+   deferred — MVP operates against the `otp-api` read APIs with an in-memory API token; a full auth
+   model (e.g. NextAuth/Auth.js) is a Phase 2 decision.
 2. Chosen VN SMS provider for Phase 1 primary (eSMS vs SpeedSMS) and email backend (SMTP vs Resend).
 3. VPS provider/region for the k3s host.
