@@ -43,7 +43,7 @@ flowchart TB
                 APISIX["APISIX (gateway)"]
                 API["otp-api"]
                 DISP["dispatcher"]
-                INFRA["Kafka / Redis / Postgres"]
+                INFRA["Kafka / Redis / MySQL"]
             end
         end
     end

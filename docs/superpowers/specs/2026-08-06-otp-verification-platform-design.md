@@ -14,8 +14,8 @@ This is a real, deployed product running on the author's own domain. It serves a
 
 1. **A working product** usable via API + a developer dashboard.
 2. **A CV showcase** that intentionally mirrors the author's target production stack
-   (go-zero microservices, APISIX gateway, Kafka event-driven, Redis, workers, k8s), so the
-   author can speak about it confidently in interviews.
+   (GoFrame microservices, MySQL, APISIX gateway, Kafka event-driven via sarama, Redis, workers,
+   k8s), so the author can speak about it confidently in interviews.
 
 Scope is deliberately narrow (**OTP first**) but the architecture is designed to be **extended
 later** to other channels (push, in-app) and other notification types without a rewrite.
@@ -46,24 +46,24 @@ Client ──HTTPS──► APISIX (edge gateway)
                     │   • edge rate limiting
                     │
                     ▼
-                 otp-api  (go-zero HTTP service)
+                 otp-api  (GoFrame HTTP service)
                     │   • validate request
                     │   • business rate limiting (per recipient / per tenant / cooldown)
                     │   • generate OTP, store HASH + TTL in Redis
-                    │   • persist audit row in Postgres
+                    │   • persist audit row in MySQL
                     │   • publish event → Kafka (otp.requested)
                     │
         Kafka topics: otp.requested / otp.sent / otp.failed / otp.dlq
                     │
                     ▼
-                dispatcher  (go-zero, Kafka consumer)
+                dispatcher  (GoFrame, Kafka consumer via sarama)
                     │   • render message from template
                     │   • select provider (email / SMS) via Provider abstraction
                     │   • send; on failure → retry / failover / DLQ
-                    │   • write delivery_logs (Postgres)
+                    │   • write delivery_logs (MySQL)
                     │   • publish otp.sent / otp.failed
                     │
-                worker / cron  (go-zero)
+                worker / cron  (GoFrame)
                         • drain otp.dlq with backoff retry
                         • scheduled cleanup of expired OTP + stale audit rows
 
@@ -75,9 +75,9 @@ Dashboard (Next.js + shadcn/ui) ──► otp-api REST (delivery-logs, api-keys)
 | Component    | Type                     | Responsibility |
 |--------------|--------------------------|----------------|
 | **APISIX**   | Gateway                  | TLS, API-key auth plugin, coarse edge rate limiting, routing to `otp-api`. |
-| **otp-api**  | go-zero HTTP service     | The synchronous request path: validation, business rate limiting, OTP generation + storage, verification, publishing events, serving read APIs for the dashboard. |
-| **dispatcher** | go-zero Kafka consumer | The asynchronous delivery path: templating, provider selection, sending, retry/failover, delivery logging. |
-| **worker/cron** | go-zero              | Background reliability: DLQ draining with backoff, scheduled cleanup jobs. |
+| **otp-api**  | GoFrame HTTP service     | The synchronous request path: validation, business rate limiting, OTP generation + storage, verification, publishing events, serving read APIs for the dashboard. |
+| **dispatcher** | GoFrame Kafka consumer (sarama) | The asynchronous delivery path: templating, provider selection, sending, retry/failover, delivery logging. |
+| **worker/cron** | GoFrame              | Background reliability: DLQ draining with backoff, scheduled cleanup jobs. |
 
 Keeping the **synchronous request path** (`otp-api`) separate from the **asynchronous delivery
 path** (`dispatcher`) is the core architectural decision: the API stays fast and available even
@@ -124,7 +124,9 @@ must be implemented for real, not mocked.
 
 ## 6. Data & Infrastructure
 
-### Postgres (source of truth / audit)
+### MySQL (source of truth / audit)
+
+Accessed via GoFrame `gf gen dao` DAOs (`dao` / `model/do` / `model/entity`).
 
 - `tenants` — owning account of an API key.
 - `api_keys` — hashed key, tenant, scopes, status.
@@ -209,14 +211,15 @@ flowchart LR
 
 - **Cluster:** **k3s** (lightweight k8s) on a single VPS to keep solo cost/ops low, exposed on the
   author's domain over HTTPS.
-- **Packaging:** Helm charts per service; Kafka/Redis/Postgres via well-known charts or operators.
+- **Packaging:** **Kustomize** per service (`manifest/deploy/kustomize/base` + `overlays/<env>`),
+  mirroring the production convention; Kafka/Redis/MySQL via well-known charts or operators.
 - **CI/CD:** GitHub Actions — build & push images → deploy to k3s. **ArgoCD / GitOps** is a Phase 3
   enhancement.
 
 ## 11. Testing Strategy
 
 - **Unit:** OTP generation/verification, rate-limit logic, provider selection/failover logic.
-- **Integration:** Redis / Postgres / Kafka behavior via **testcontainers**.
+- **Integration:** Redis / MySQL / Kafka behavior via **testcontainers**.
 - **End-to-end:** full `send → verify` flow exercised through APISIX against running services.
 - **Coverage target:** 80% (per project standards), with TDD (test-first) for domain logic.
 
@@ -230,7 +233,7 @@ flowchart LR
 ## 13. Phased Delivery
 
 - **Phase 1 — MVP (deployable):** `otp-api` + `dispatcher` + `worker/cron`, real email + one real
-  SMS provider, Redis + Postgres + Kafka, APISIX, k3s deploy, dashboard wired to read APIs.
+  SMS provider, Redis + MySQL + Kafka, APISIX, k3s deploy, dashboard wired to read APIs.
 - **Phase 2:** multi-provider **failover** (Twilio), **LGTM observability**, retry/DLQ hardening,
   optional HMAC request signing.
 - **Phase 3:** additional channels (push / in-app), **ArgoCD/GitOps**, autoscaling; floci learning

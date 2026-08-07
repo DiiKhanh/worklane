@@ -10,10 +10,14 @@
 This document narrows the full design spec into a concrete, buildable **MVP**. It does not
 replace the design spec; it selects the first slice to build.
 
-**Guiding decision:** the full distributed architecture (go-zero microservices, APISIX, Kafka,
+**Guiding decision:** the full distributed architecture (GoFrame microservices, APISIX, Kafka,
 k3s) **is the point** of this project (CV showcase). So the MVP is **not** a feature-rich product
 on a simple stack - it is a **walking skeleton**: one thin end-to-end thread that runs through
 *every* architectural layer, deployed for real, then thickened later.
+
+**Stack alignment:** the backend mirrors the author's production stack — **GoFrame v2, MySQL,
+Redis, Kafka via IBM/sarama, Kustomize deploy** — so it doubles as interview material. Conventions
+are captured in [../reference/goframe-backend-conventions.md](../reference/goframe-backend-conventions.md).
 
 The "fastest MVP" pressure applies to **feature breadth** and to the **frontend** (Next.js +
 shadcn), not to the architecture. We minimize *what* the thread does, not *which layers* it
@@ -30,7 +34,7 @@ sequenceDiagram
     participant GW as APISIX
     participant API as otp-api
     participant R as Redis
-    participant PG as Postgres
+    participant PG as MySQL
     participant K as Kafka
     participant D as dispatcher
     participant E as Email provider
@@ -62,16 +66,16 @@ sequenceDiagram
 | Area | Decision |
 |------|----------|
 | **Channel** | **Email only** via **Resend** (hosted API, free-tier). SMS is deferred so provider brand-name approval never blocks the MVP. |
-| **Services** | Two: `otp-api` (go-zero HTTP, sync path) + `dispatcher` (go-zero Kafka consumer, async path). **No** worker/cron yet. |
+| **Services** | Two GoFrame v2 services: `otp-api` (HTTP, sync path) + `dispatcher` (Kafka consumer via sarama, async path). **No** worker/cron yet. |
 | **Gateway** | APISIX: TLS termination, API-key auth plugin, coarse edge rate limiting, routing to `otp-api`. |
 | **Kafka** | Topics `otp.requested`, `otp.sent`, `otp.failed`. `otp.dlq` is **declared** and the dispatcher may publish to it on failure, but there is **no drainer** in the MVP. |
 | **Redis** | OTP code **hash** + TTL, rate-limit counters, resend-cooldown markers, verify-attempt counters. |
-| **Postgres** | `tenants`, `api_keys`, `otp_requests`, `delivery_logs`, `templates`. |
+| **MySQL** | `tenants`, `api_keys`, `otp_requests`, `delivery_logs`, `templates` (accessed via GoFrame `gf gen dao` DAOs). |
 | **Core domain** ⭐ | Crypto-random code generation, hash-only storage, constant-time verification, **four-layer rate limiting** (per recipient / per tenant / resend cooldown / verify-attempt lock), `Idempotency-Key`, and the `requested → sent \| failed → verified \| expired` state model. Fully unit-tested. |
 | **Tenant / API key** | Created via a **CLI seed script** (or a protected admin endpoint). The data model stays multi-tenant; only the *creation UX* is deferred. |
 | **Dashboard** | New Next.js + shadcn/ui app (from a shadcn block). **Three read-only screens:** (1) API keys list, (2) OTP request history, (3) delivery-logs status via React Query polling. Stack per §8 of the design spec (TanStack Query, Zustand, RHF+Zod, TanStack Table). |
-| **Deploy** | **Code-first:** build and green the thread on docker-compose locally, then package Helm charts and deploy to **k3s** on a self-hosted machine, reachable at `https://<domain>` over HTTPS. The **dashboard deploys separately to Vercel**. Hosting/networking (self-hosted k3s host, Cloudflare, Tenten domain) is specified in its own doc - see [2026-08-07-self-hosted-infra-setup.md](./2026-08-07-self-hosted-infra-setup.md). |
-| **Testing** | Unit (domain logic, 80% target), integration via testcontainers (Redis / Postgres / Kafka), end-to-end `send → verify` through APISIX against running services. |
+| **Deploy** | **Code-first:** build and green the thread on docker-compose locally, then package **Kustomize manifests** (base + `develop` overlay) and deploy to **k3s** on a self-hosted machine, reachable at `https://<domain>` over HTTPS. The **dashboard deploys separately to Vercel**. Hosting/networking (self-hosted k3s host, Cloudflare, Tenten domain) is specified in its own doc - see [2026-08-07-self-hosted-infra-setup.md](./2026-08-07-self-hosted-infra-setup.md). |
+| **Testing** | Unit (domain logic, 80% target), integration via testcontainers (Redis / MySQL / Kafka), end-to-end `send → verify` through APISIX against running services. |
 
 **Why keep the full core domain in the MVP:** it is pure, infra-independent code - cheap to write
 and test - and it is the strongest interview material (anti-brute-force, anti-spam, idempotency).
@@ -101,10 +105,10 @@ Cutting it to "go faster" would cut the wrong thing.
 ## 6. Build order
 
 1. Core domain package (TDD, no infra) → unit tests green.
-2. `otp-api` HTTP service wrapping the domain, Redis + Postgres wired, publishing `otp.requested`.
-3. `dispatcher` consuming `otp.requested`, sending email, writing `delivery_logs`.
-4. End-to-end on **docker-compose** (APISIX + Kafka + Redis + Postgres) → `send → verify` green.
-5. Helm charts → deploy to **k3s** on the VPS → HTTPS on the domain.
+2. `otp-api` GoFrame HTTP service wrapping the domain, Redis + MySQL wired, publishing `otp.requested`.
+3. `dispatcher` GoFrame service consuming `otp.requested` (sarama), sending email, writing `delivery_logs`.
+4. End-to-end on **docker-compose** (APISIX + Kafka + Redis + MySQL) → `send → verify` green.
+5. Kustomize manifests → deploy to **k3s** on the self-hosted machine → HTTPS on the domain.
 6. Next.js dashboard (3 read-only screens) wired to the read APIs.
 7. **Fast-follow:** add `worker/cron`.
 

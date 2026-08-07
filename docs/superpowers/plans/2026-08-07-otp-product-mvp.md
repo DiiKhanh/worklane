@@ -1,5 +1,12 @@
 # OTP Product MVP Implementation Plan
 
+> ⚠️ **STATUS: SUPERSEDED — pending rewrite.** This plan targets the old go-zero + Postgres +
+> ports-and-adapters stack. The project has since switched to **GoFrame v2 + MySQL + IBM/sarama**
+> (see [../reference/goframe-backend-conventions.md](../reference/goframe-backend-conventions.md) and
+> the updated specs). Do **not** execute this plan as-is; it will be rewritten for GoFrame. The
+> domain-logic tasks (code generation, hashing, rate limiting, verify-attempt lock, idempotency,
+> state model) remain largely valid as pure Go and will be reused.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the walking skeleton from [2026-08-07-otp-mvp-scope.md](../specs/2026-08-07-otp-mvp-scope.md) — one email OTP that flows `send → real email → verify` through APISIX → otp-api → Kafka → dispatcher → Resend, proven end-to-end on docker-compose.

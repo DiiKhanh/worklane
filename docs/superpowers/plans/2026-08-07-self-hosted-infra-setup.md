@@ -198,7 +198,7 @@ Expected: a shell on the Ubuntu VM, reached entirely through Cloudflare.
 
 ## Phase F — Deploy the OTP stack (hand-off to the product plan)
 
-- [ ] **F1:** Package `otp-api` + `dispatcher` (+ Redis/Postgres/Kafka charts) as Helm releases and install into k3s. This is the deploy step referenced by the product plan; do it only after the product's docker-compose e2e is green.
+- [ ] **F1:** Deploy `otp-api` + `dispatcher` to k3s via **Kustomize** (`manifest/deploy/kustomize/base` + `develop` overlay), with Redis/MySQL/Kafka provided by their well-known charts or operators. This is the deploy step referenced by the product plan; do it only after the product's docker-compose e2e is green. (APISIX itself is installed via its Helm chart in Phase D — a third-party dependency, distinct from our services' Kustomize manifests.)
 - [ ] **F2 — Verify:** the full success criteria from the MVP scope doc §5 hold against `https://api.otp.<domain>`.
 
 ---
