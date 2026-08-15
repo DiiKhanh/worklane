@@ -1,0 +1,36 @@
+# Traefik dynamic config: route /v1/* to otp-api, with an edge rate-limit and CORS
+# middleware. API-key auth is enforced inside otp-api, not here.
+http:
+  routers:
+    otpapi:
+      rule: "PathPrefix(`/v1`)"
+      entryPoints:
+        - web
+      service: otpapi
+      middlewares:
+        - otp-ratelimit
+        - otp-cors
+
+  services:
+    otpapi:
+      loadBalancer:
+        servers:
+          - url: "http://otp-api:8888"
+
+  middlewares:
+    otp-ratelimit:
+      rateLimit:
+        average: 100
+        burst: 50
+    otp-cors:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        accessControlAllowOriginList:
+          - "*"
+        accessControlAllowHeaders:
+          - authorization
+          - content-type
+          - idempotency-key

@@ -1,0 +1,119 @@
+# Local walking-skeleton stack. Bring up from the repo root:
+#   docker compose -f deploy/compose/docker-compose.yml up -d --build
+# Web UIs (host): Traefik :8090 · Adminer :8081 · RedisInsight :5540 · Redpanda Console :8085 · MailHog :8025
+name: worklane
+
+services:
+  # ---- infrastructure ----
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: otp
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-psecret"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "3306:3306"
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "6379:6379"
+
+  redpanda:
+    image: redpandadata/redpanda:v23.3.3
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "9092:9092"
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # web UI + API
+
+  # ---- application services ----
+  otp-api:
+    build:
+      context: ../..
+      dockerfile: services/otp-api/Dockerfile
+    environment:
+      MYSQL_DSN: "root:secret@tcp(mysql:3306)/otp?parseTime=true&multiStatements=true"
+      REDIS_URL: "redis://redis:6379/0"
+      KAFKA_BROKERS: "redpanda:9092"
+      HTTP_ADDR: ":8888"
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+
+  otp-dispatcher:
+    build:
+      context: ../..
+      dockerfile: services/otp-dispatcher/Dockerfile
+    environment:
+      MYSQL_DSN: "root:secret@tcp(mysql:3306)/otp?parseTime=true&multiStatements=true"
+      KAFKA_BROKERS: "redpanda:9092"
+      EMAIL_PROVIDER: "smtp"
+      SMTP_HOST: "mailhog"
+      SMTP_PORT: "1025"
+      RESEND_FROM: "OTP <otp@worklane.dev>"
+    depends_on:
+      mysql: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      otp-api: { condition: service_started } # otp-api owns migrations; wait for its schema
+
+  # ---- gateway ----
+  traefik:
+    image: traefik:v3.1
+    command: ["--configFile=/etc/traefik/traefik.yml"]
+    ports:
+      - "80:80"     # gateway - curl the API here
+      - "8090:8080" # Traefik dashboard
+    volumes:
+      - "../traefik/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "../traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+
+  # ---- developer web UIs (no host installs needed) ----
+  adminer:
+    image: adminer:4
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql
+    ports:
+      - "8081:8080"
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - "5540:5540"
+
+  console:
+    image: redpandadata/console:v2.7.2
+    environment:
+      KAFKA_BROKERS: "redpanda:9092"
+    ports:
+      - "8085:8080"
+    depends_on:
+      redpanda: { condition: service_started }

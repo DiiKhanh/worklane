@@ -1,0 +1,18 @@
+# Traefik static config. We use the file provider (not the docker provider) so the
+# gateway does not depend on the Docker socket - more portable and avoids Docker API
+# version mismatches. Routes are declared in dynamic.yml.
+entryPoints:
+  web:
+    address: ":80"
+
+api:
+  dashboard: true
+  insecure: true # dashboard on :8080 without auth - local only
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+log:
+  level: INFO

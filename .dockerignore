@@ -1,0 +1,7 @@
+.git
+.github
+dashboard/node_modules
+docs
+*.md
+cover.out
+scratchpad
