@@ -28,7 +28,7 @@ func (f *fakeSvc) Verify(context.Context, app.VerifyInput) error { return f.veri
 
 type fakeRepo struct{ validHashedKey string }
 
-func (f *fakeRepo) InsertRequest(context.Context, app.Request) error { return nil }
+func (f *fakeRepo) InsertRequest(context.Context, app.Request) error  { return nil }
 func (f *fakeRepo) UpdateState(context.Context, string, string) error { return nil }
 func (f *fakeRepo) FindAPIKey(_ context.Context, hashedKey string) (app.APIKey, error) {
 	if hashedKey == f.validHashedKey {

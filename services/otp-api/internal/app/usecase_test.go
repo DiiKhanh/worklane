@@ -35,8 +35,8 @@ func (f *fakeRepo) UpdateState(_ context.Context, id, to string) error {
 	f.states[id] = to
 	return nil
 }
-func (f *fakeRepo) FindAPIKey(context.Context, string) (APIKey, error)          { return APIKey{}, nil }
-func (f *fakeRepo) ListAPIKeys(context.Context, string) ([]APIKey, error)       { return nil, nil }
+func (f *fakeRepo) FindAPIKey(context.Context, string) (APIKey, error)           { return APIKey{}, nil }
+func (f *fakeRepo) ListAPIKeys(context.Context, string) ([]APIKey, error)        { return nil, nil }
 func (f *fakeRepo) ListRequests(context.Context, string, int) ([]Request, error) { return nil, nil }
 func (f *fakeRepo) ListDeliveryLogs(context.Context, string, int) ([]DeliveryLog, error) {
 	return nil, nil
