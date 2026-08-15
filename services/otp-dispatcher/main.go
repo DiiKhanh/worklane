@@ -21,6 +21,7 @@ import (
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/inbound/consumer"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/mysqlrepo"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/resendmail"
+	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/smtpmail"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/app"
 )
 
@@ -47,7 +48,20 @@ func main() {
 	}
 	defer func() { _ = prod.Close() }()
 
-	mail := resendmail.New(resendKey, resendFrom, resendBase, &http.Client{Timeout: 10 * time.Second})
+	// Provider is chosen by config: SMTP (MailHog) for local/e2e, Resend for production.
+	// Both satisfy app.EmailProvider, so nothing downstream changes.
+	var mail app.EmailProvider
+	switch config.Env("EMAIL_PROVIDER", "resend") {
+	case "smtp":
+		mail = smtpmail.New(
+			config.Env("SMTP_HOST", "mailhog"), config.EnvInt("SMTP_PORT", 1025),
+			resendFrom, config.Env("SMTP_USER", ""), config.Env("SMTP_PASS", ""),
+		)
+		log.Println("otp-dispatcher: using SMTP email provider")
+	default:
+		mail = resendmail.New(resendKey, resendFrom, resendBase, &http.Client{Timeout: 10 * time.Second})
+		log.Println("otp-dispatcher: using Resend email provider")
+	}
 	repo := mysqlrepo.New(db)
 
 	handler := app.NewHandler(app.Deps{
