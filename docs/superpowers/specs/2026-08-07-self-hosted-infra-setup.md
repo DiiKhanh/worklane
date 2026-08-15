@@ -40,7 +40,7 @@ flowchart TB
         subgraph vm["Ubuntu VM (NAT, outbound only)"]
             CFD["cloudflared (Tunnel agent)"]
             subgraph k3s["k3s cluster"]
-                APISIX["APISIX (gateway)"]
+                TRAEFIK["Traefik (default ingress)"]
                 API["otp-api"]
                 DISP["dispatcher"]
                 INFRA["Kafka / Redis / MySQL"]
@@ -53,9 +53,9 @@ flowchart TB
     Dev -->|ssh via cloudflared access| Edge
     DNS --- Edge
     Edge <-->|outbound tunnel| CFD
-    CFD -->|ingress rules| APISIX
+    CFD -->|ingress rules| TRAEFIK
     CFD -->|ssh route| SSHD["sshd :22"]
-    APISIX --> API --> INFRA
+    TRAEFIK --> API --> INFRA
     DISP --> INFRA
 ```
 
@@ -70,14 +70,14 @@ required - which is exactly why VMware **NAT** networking is sufficient.
 |-------|----------|-----|
 | VMware network mode | **NAT** | Tunnel is outbound-only; NAT gives the VM internet with zero inbound exposure. Bridged is unnecessary. |
 | Public exposure | **Cloudflare Tunnel** (`cloudflared` as a systemd service in the VM) | No open ports, no static IP; edge TLS free. |
-| Edge TLS | **Cloudflare** terminates TLS | APISIX stays the business gateway behind it (auth, rate limit, routing). |
+| Edge TLS | **Cloudflare** terminates TLS | Traefik stays the business gateway behind it (rate limit, CORS, routing); API-key auth is in `otp-api`. |
 | SSH access | **Cloudflare Tunnel SSH route** (`cloudflared access ssh`) | Same no-port-forward path; avoids exposing sshd publicly. |
-| Ingress controller | **APISIX** (disable k3s's default Traefik) | The product design mandates APISIX as the gateway. |
+| Ingress controller | **Traefik** (k3s's built-in default - kept, not disabled) | k3s ships Traefik out of the box, so nothing extra to install; local docker-compose and k3s use the same gateway. |
 | DNS | **Tenten domain → Cloudflare nameservers** | Puts DNS + Tunnel hostnames under Cloudflare. |
 
 ## 5. Hostnames (proposed)
 
-- `api.otp.<domain>` → Cloudflare Tunnel → APISIX → `otp-api`.
+- `api.otp.<domain>` → Cloudflare Tunnel → Traefik → `otp-api`.
 - `ssh.<domain>` → Cloudflare Tunnel → `ssh://localhost:22` (via `cloudflared access`).
 - Dashboard on Vercel: `otp.<domain>` (or a Vercel domain) - a CNAME managed in Cloudflare.
 
@@ -100,7 +100,7 @@ Each phase ends with a concrete **verify** step. Do not advance until it passes.
 1. Install `cloudflared` in the VM; `cloudflared tunnel login` (authorize the domain).
 2. `cloudflared tunnel create otp-home` → produces a tunnel ID + credentials file.
 3. Write the tunnel config with **ingress rules** (hostname → service):
-   - `api.otp.<domain>` → `http://<apisix-service>` (filled in Phase D)
+   - `api.otp.<domain>` → `http://<traefik-service>` (filled in Phase D)
    - `ssh.<domain>` → `ssh://localhost:22`
    - catch-all → `http_status:404`
 4. Route DNS: `cloudflared tunnel route dns otp-home api.otp.<domain>` (and the ssh host).
@@ -108,12 +108,16 @@ Each phase ends with a concrete **verify** step. Do not advance until it passes.
 - **Verify:** `cloudflared tunnel info otp-home` shows a healthy connection; a temporary
   `http://localhost:8080` test service is reachable at `https://api.otp.<domain>`.
 
-### Phase D - k3s + APISIX
-1. Install k3s **with Traefik disabled**: `curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -`.
+### Phase D - k3s + Traefik (built-in)
+1. Install k3s with defaults (Traefik included): `curl -sfL https://get.k3s.io | sh -`. No `--disable
+   traefik` - we **keep** the bundled Traefik as the ingress controller.
 2. Confirm `kubectl get nodes` is Ready; copy kubeconfig for local use.
-3. Install **APISIX** (+ its ingress) via Helm.
-4. Point the Phase-C `api.otp.<domain>` ingress rule at the **APISIX** service address.
-- **Verify:** a hello route through APISIX answers at `https://api.otp.<domain>`.
+3. Confirm Traefik is up: `kubectl -n kube-system get pods | grep traefik` and note its Service (a
+   `LoadBalancer`/NodePort on 80/443 provided by k3s's servicelb).
+4. Point the Phase-C `api.otp.<domain>` ingress rule at the **Traefik** service address (e.g. the
+   node's `:80`, or a `kubectl port-forward` to the Traefik service for the MVP).
+- **Verify:** a hello route (a test `IngressRoute`/`Ingress` to any upstream) answers at
+  `https://api.otp.<domain>`.
 
 ### Phase E - SSH over the tunnel
 1. On the client (dev machine): install `cloudflared`; add an SSH `ProxyCommand` using

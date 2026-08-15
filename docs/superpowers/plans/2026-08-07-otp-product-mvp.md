@@ -1,97 +1,144 @@
 # OTP Product MVP Implementation Plan
 
-> ⚠️ **STATUS: SUPERSEDED — pending rewrite.** This plan targets the old go-zero + Postgres +
-> ports-and-adapters stack. The project has since switched to **GoFrame v2 + MySQL + IBM/sarama**
-> (see [../reference/goframe-backend-conventions.md](../reference/goframe-backend-conventions.md) and
-> the updated specs). Do **not** execute this plan as-is; it will be rewritten for GoFrame. The
-> domain-logic tasks (code generation, hashing, rate limiting, verify-attempt lock, idempotency,
-> state model) remain largely valid as pure Go and will be reused.
+> **STATUS: ACTIVE (rewritten 2026-08-15).** This plan targets the current stack: a **monorepo of Gin
+> microservices**, each internally **hexagonal (ports & adapters)**, with **MySQL via GORM**,
+> **Redis**, **Kafka via IBM/sarama**, **Traefik** gateway, and **Kustomize** deploy. It supersedes the
+> earlier go-zero + Postgres + APISIX draft. Repository structure and the production→this-project
+> concept mapping live in [../../reference/architecture-and-layout.md](../../reference/architecture-and-layout.md).
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development or
+> superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Build the walking skeleton from [2026-08-07-otp-mvp-scope.md](../specs/2026-08-07-otp-mvp-scope.md) — one email OTP that flows `send → real email → verify` through APISIX → otp-api → Kafka → dispatcher → Resend, proven end-to-end on docker-compose.
+**Goal:** Build the walking skeleton from [../specs/2026-08-07-otp-mvp-scope.md](../specs/2026-08-07-otp-mvp-scope.md) -
+one email OTP that flows `send → real email → verify` through **Traefik → otp-api → Kafka →
+otp-dispatcher → Resend**, proven end-to-end on docker-compose, then deployed to k3s.
 
-**Architecture:** Ports & adapters. A pure `internal/otp` domain core (code generation, hashing, verification, rate limiting, state) depends only on interfaces (`Clock`, `CodeStore`, `Counter`, `Repo`, `Publisher`, `EmailProvider`). Adapters (Redis, Postgres, Kafka, Resend) implement those interfaces. Two go-zero services wire them: `otp-api` (sync HTTP) publishes `otp.requested`; `dispatcher` (async consumer) sends the email. This keeps the domain 100% unit-testable with fakes and defers all infra behind boundaries.
+**Architecture:** Two independently deployable microservices in one Go module. `otp-api` (Gin, sync
+HTTP) owns OTP generation/verification and publishes `otp.requested`; `otp-dispatcher` (sarama consumer,
+async) sends the email. Each service is a hexagon: a **pure domain** + an **application layer** of use
+cases over **ports**, with **adapters** (Gin, GORM, Redis, sarama, Resend) implementing those ports.
+The domain imports no infrastructure and is 100% unit-testable with fakes. The two services share only
+`pkg/platform/*` (infra libraries) and `pkg/contracts/otp` (the Kafka event schema) - never each
+other's `internal/`.
 
-**Tech Stack:** Go 1.22+, go-zero (HTTP service + Kafka via `go-queue`), Redis, PostgreSQL, Apache Kafka, APISIX, Resend (email), docker-compose, testcontainers-go for integration tests.
+**Tech Stack:** Go 1.22+, Gin (HTTP), IBM/sarama (Kafka), `redis/go-redis/v9` (Redis), GORM +
+`golang-migrate` (MySQL), Resend (email), Traefik (gateway), docker-compose, testcontainers-go
+(integration), Redpanda (local Kafka).
 
 ## Global Constraints
 
-- Language: **Go 1.22+**; module path `github.com/duykhanh/otp` (adjust to real remote if different).
-- Domain package `internal/otp` MUST NOT import any adapter, driver, or framework package (no `redis`, `pgx`, `kafka`, `go-zero`). Enforced by an architecture test.
-- OTP plaintext code is **never** persisted or logged — only a hash is stored (Redis) with a TTL. Default length **6**, default TTL **5 minutes**.
+- Module path: `github.com/duykhanh/worklane`.
+- **Domain purity:** `services/*/internal/domain` MUST NOT import any adapter, driver, framework, or
+  `pkg/platform`. `internal/app` may import only `domain`, its own `ports.go`, and `pkg/contracts`.
+  Enforced by an architecture test (Task 8).
+- **Service isolation:** no service may import another service's `internal/*` (Go enforces this via the
+  `internal/` directory rule). Cross-service communication is Kafka only.
+- OTP plaintext code is **never** persisted or logged - only a salted **hash** is stored (Redis) with a
+  TTL. Default length **6**, default TTL **5 minutes**.
 - Verification uses **constant-time** comparison.
-- Recipient PII (email) is **masked** in any log or audit output (e.g. `d***@gmail.com`).
-- Every task is TDD: failing test first, minimal code, green, commit. Target **80%** coverage on `internal/otp`.
-- Immutability: domain constructors return new values; no in-place mutation of shared structs.
+- Recipient PII (email) is **masked** in any log or audit output (`d***@gmail.com`).
+- Every domain/app task is TDD: failing test first, minimal code, green, commit. Target **80%** coverage
+  on `otp-api/internal/domain` + `internal/app`.
+- Immutability: constructors return new values; no in-place mutation of shared structs.
 
 ---
 
-## File Structure
+## File Structure (target)
 
 ```
-go.mod
+go.mod                                   # module github.com/duykhanh/worklane
 Makefile
-cmd/
-  otp-api/main.go          # go-zero HTTP entrypoint
-  dispatcher/main.go       # Kafka consumer entrypoint
-  seed/main.go             # CLI: create tenant + API key
-internal/
-  otp/                     # PURE domain core — no infra imports
-    code.go / code_test.go             # crypto-random numeric code
-    hash.go / hash_test.go             # hash + constant-time verify
-    state.go / state_test.go           # request state model
-    request.go / request_test.go       # OTPRequest entity
-    ports.go                           # Clock, CodeStore, Counter, Repo, Publisher, EmailProvider
-    ratelimit.go / ratelimit_test.go   # 4-layer rate limiting (pure, over Counter)
-    service.go / service_test.go       # SendOTP / VerifyOTP orchestration
-    errors.go
-    arch_test.go                       # asserts domain imports no adapters
-  adapter/
-    redisstore/store.go                # CodeStore + Counter
-    pgrepo/repo.go, migrations/*.sql   # tenants, api_keys, otp_requests, delivery_logs, templates
-    kafkaev/producer.go, consumer.go   # publish/consume events
-    resendmail/provider.go             # EmailProvider via Resend
-  transport/
-    httpapi/                           # go-zero handlers/logic for /v1/otp/*
-    dispatch/                          # dispatcher business logic
+pkg/
+  contracts/otp/event.go                 # RequestedEvent, SentEvent... + state string consts (shared kernel)
+  platform/config/                       # typed config loader
+  platform/httpserver/                   # gin engine bootstrap + middleware + error->HTTP mapping
+  platform/kafka/                        # sarama producer/consumer wrapper + typed envelope
+  platform/redis/                        # go-redis client + typed key builders
+  platform/mysql/                        # gorm DB open + migrate runner
+  platform/logger/                       # JSON logger
+services/
+  otp-api/
+    main.go                              # composition root (Gin)
+    internal/domain/                     # code, hash, state, request, errors (PURE)
+    internal/app/                        # ports.go, ratelimit.go, send.go, verify.go, config.go
+    internal/adapters/inbound/http/      # gin handlers, DTOs, apikey middleware
+    internal/adapters/outbound/redisstore/
+    internal/adapters/outbound/mysqlrepo/
+    internal/adapters/outbound/kafkabus/ # publisher
+  otp-dispatcher/
+    main.go                              # composition root (sarama consumer)
+    internal/app/                        # ports.go, handler.go, template.go
+    internal/adapters/inbound/kafka/     # consumer
+    internal/adapters/outbound/resendmail/
+    internal/adapters/outbound/mysqlrepo/
+    internal/adapters/outbound/kafkabus/ # publisher (sent/failed/dlq)
+  seed/main.go                           # CLI: tenant + API key
+db/otp/migrations/                       # golang-migrate .up.sql/.down.sql
 deploy/
-  docker-compose.yml
-  apisix/apisix.yaml, apisix/routes.yaml
-dashboard/                             # Next.js app (see Phase 5)
+  compose/docker-compose.yml
+  traefik/traefik.yml, dynamic.yml
+  kustomize/base/{otp-api,otp-dispatcher}, kustomize/overlays/develop
+dashboard/                               # Next.js (Phase 5)
 ```
 
 ---
 
-## Phase 1 — Core domain (pure, TDD)
+## Phase 1 - otp-api core: domain + application (pure, TDD)
 
-### Task 1: Project scaffolding
+All Phase 1 code lives under `services/otp-api/internal/`. It has zero infrastructure imports.
 
-**Files:**
-- Create: `go.mod`, `Makefile`, `internal/otp/errors.go`
+### Task 1: Monorepo scaffolding + shared contract
 
-- [ ] **Step 1: Init module and tidy**
+**Files:** `go.mod`, `Makefile`, `pkg/contracts/otp/event.go`, `services/otp-api/internal/domain/errors.go`
+
+- [ ] **Step 1: Init module**
 
 ```bash
-go mod init github.com/duykhanh/otp
+go mod init github.com/duykhanh/worklane
 go mod tidy
 ```
 
-- [ ] **Step 2: Add Makefile**
+- [ ] **Step 2: Makefile**
 
 ```makefile
 .PHONY: test cover
 test:
 	go test ./...
 cover:
-	go test -coverprofile=cover.out ./internal/otp/... && go tool cover -func=cover.out | tail -1
+	go test -coverprofile=cover.out ./services/otp-api/internal/... && go tool cover -func=cover.out | tail -1
 ```
 
-- [ ] **Step 3: Add domain error sentinels**
+- [ ] **Step 3: Shared event contract + state vocabulary** (used by both services)
 
 ```go
-// internal/otp/errors.go
+// pkg/contracts/otp/event.go
 package otp
+
+// Topic-independent event payloads exchanged over Kafka. Both otp-api (producer)
+// and otp-dispatcher (consumer) marshal/unmarshal these exact shapes.
+type RequestedEvent struct {
+	RequestID string `json:"request_id"`
+	TenantID  string `json:"tenant_id"`
+	Recipient string `json:"recipient"`
+	Channel   string `json:"channel"`
+	Code      string `json:"code"` // never logged
+}
+
+// State strings are the shared persistence/wire vocabulary for otp_requests.state.
+const (
+	StateRequested = "requested"
+	StateSent      = "sent"
+	StateFailed    = "failed"
+	StateVerified  = "verified"
+	StateExpired   = "expired"
+)
+```
+
+- [ ] **Step 4: Domain error sentinels**
+
+```go
+// services/otp-api/internal/domain/errors.go
+package domain
 
 import "errors"
 
@@ -105,26 +152,17 @@ var (
 )
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit** `chore: scaffold monorepo, shared otp contract, domain errors`
 
-```bash
-git add go.mod Makefile internal/otp/errors.go
-git commit -m "chore: scaffold go module and domain errors"
-```
+### Task 2: Crypto-random code generation (domain)
 
-### Task 2: Crypto-random code generation
+**Files:** `services/otp-api/internal/domain/code.go` + `code_test.go`
 
-**Files:**
-- Create: `internal/otp/code.go`, `internal/otp/code_test.go`
-
-**Interfaces:**
-- Produces: `func GenerateCode(length int) (string, error)` — returns a zero-padded numeric string of exactly `length` digits using `crypto/rand`.
-
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Failing test**
 
 ```go
-// internal/otp/code_test.go
-package otp
+// code_test.go
+package domain
 
 import (
 	"strconv"
@@ -152,23 +190,18 @@ func TestGenerateCode_Distribution(t *testing.T) {
 		c, _ := GenerateCode(6)
 		seen[c]++
 	}
-	// 1000 draws from 1e6 space: collisions must be rare.
 	if len(seen) < 990 {
 		t.Fatalf("suspicious distribution, unique=%d", len(seen))
 	}
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `go test ./internal/otp/ -run TestGenerateCode -v`
-Expected: FAIL — `undefined: GenerateCode`.
-
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 2:** `go test ./services/otp-api/internal/domain/ -run TestGenerateCode -v` → FAIL.
+- [ ] **Step 3: Implement**
 
 ```go
-// internal/otp/code.go
-package otp
+// code.go
+package domain
 
 import (
 	"crypto/rand"
@@ -176,8 +209,9 @@ import (
 	"math/big"
 )
 
-// GenerateCode returns a numeric OTP of exactly length digits (zero-padded),
-// drawn from crypto/rand. length must be between 4 and 10.
+// GenerateCode returns a numeric OTP of exactly length digits (zero-padded), drawn
+// from crypto/rand. length must be between 4 and 10. Using crypto/rand (not math/rand)
+// is essential: OTPs are a security primitive and must be unpredictable.
 func GenerateCode(length int) (string, error) {
 	if length < 4 || length > 10 {
 		return "", fmt.Errorf("otp: invalid code length %d", length)
@@ -191,31 +225,18 @@ func GenerateCode(length int) (string, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4:** rerun → PASS.
+- [ ] **Step 5: Commit** `feat: crypto-random OTP code generation`
 
-Run: `go test ./internal/otp/ -run TestGenerateCode -v`
-Expected: PASS.
+### Task 3: Hashing + constant-time verification (domain)
 
-- [ ] **Step 5: Commit**
+**Files:** `domain/hash.go` + `hash_test.go`
 
-```bash
-git add internal/otp/code.go internal/otp/code_test.go
-git commit -m "feat: crypto-random OTP code generation"
-```
-
-### Task 3: Hashing + constant-time verification
-
-**Files:**
-- Create: `internal/otp/hash.go`, `internal/otp/hash_test.go`
-
-**Interfaces:**
-- Produces: `func HashCode(code, salt string) string` (hex SHA-256 of salt+code) and `func VerifyHash(hash, code, salt string) bool` (constant-time).
-
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Failing test**
 
 ```go
-// internal/otp/hash_test.go
-package otp
+// hash_test.go
+package domain
 
 import "testing"
 
@@ -241,16 +262,12 @@ func TestVerifyHash(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `go test ./internal/otp/ -run 'TestHashCode|TestVerifyHash' -v`
-Expected: FAIL — `undefined: HashCode`.
-
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3: Implement**
 
 ```go
-// internal/otp/hash.go
-package otp
+// hash.go
+package domain
 
 import (
 	"crypto/sha256"
@@ -258,46 +275,33 @@ import (
 	"encoding/hex"
 )
 
-// HashCode returns the hex SHA-256 of salt+code. The salt is a per-request
-// random value stored alongside the hash so two requests for the same code
-// produce different hashes.
+// HashCode returns hex SHA-256 of salt+code. A per-request random salt means two
+// requests for the same code produce different hashes (defends against precomputation).
 func HashCode(code, salt string) string {
 	sum := sha256.Sum256([]byte(salt + ":" + code))
 	return hex.EncodeToString(sum[:])
 }
 
-// VerifyHash compares in constant time.
+// VerifyHash compares in constant time. subtle.ConstantTimeCompare avoids leaking how
+// many leading characters matched via timing - the classic OTP/token side channel.
 func VerifyHash(hash, code, salt string) bool {
 	got := HashCode(code, salt)
 	return subtle.ConstantTimeCompare([]byte(got), []byte(hash)) == 1
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Commit** `feat: salted hashing with constant-time verification`
 
-Run: `go test ./internal/otp/ -run 'TestHashCode|TestVerifyHash' -v`
-Expected: PASS.
+### Task 4: State model (domain)
 
-- [ ] **Step 5: Commit**
+**Files:** `domain/state.go` + `state_test.go`
 
-```bash
-git add internal/otp/hash.go internal/otp/hash_test.go
-git commit -m "feat: salted hashing with constant-time verification"
-```
-
-### Task 4: State model
-
-**Files:**
-- Create: `internal/otp/state.go`, `internal/otp/state_test.go`
-
-**Interfaces:**
-- Produces: `type State string` with consts `StateRequested`, `StateSent`, `StateFailed`, `StateVerified`, `StateExpired`; `func (s State) CanTransition(to State) bool`.
-
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Failing test**
 
 ```go
-// internal/otp/state_test.go
-package otp
+// state_test.go
+package domain
 
 import "testing"
 
@@ -312,8 +316,7 @@ func TestState_Transitions(t *testing.T) {
 		}
 	}
 	bad := [][2]State{
-		{StateVerified, StateSent}, {StateExpired, StateVerified},
-		{StateFailed, StateSent},
+		{StateVerified, StateSent}, {StateExpired, StateVerified}, {StateFailed, StateSent},
 	}
 	for _, p := range bad {
 		if p[0].CanTransition(p[1]) {
@@ -323,25 +326,23 @@ func TestState_Transitions(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `go test ./internal/otp/ -run TestState -v`
-Expected: FAIL — `undefined: State`.
-
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3: Implement** (State values reuse the shared contract vocabulary)
 
 ```go
-// internal/otp/state.go
-package otp
+// state.go
+package domain
+
+import contracts "github.com/duykhanh/worklane/pkg/contracts/otp"
 
 type State string
 
 const (
-	StateRequested State = "requested"
-	StateSent      State = "sent"
-	StateFailed    State = "failed"
-	StateVerified  State = "verified"
-	StateExpired   State = "expired"
+	StateRequested State = contracts.StateRequested
+	StateSent      State = contracts.StateSent
+	StateFailed    State = contracts.StateFailed
+	StateVerified  State = contracts.StateVerified
+	StateExpired   State = contracts.StateExpired
 )
 
 var transitions = map[State]map[State]bool{
@@ -352,44 +353,25 @@ var transitions = map[State]map[State]bool{
 	StateExpired:   {},
 }
 
-func (s State) CanTransition(to State) bool {
-	return transitions[s][to]
-}
+func (s State) CanTransition(to State) bool { return transitions[s][to] }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+> Note: `domain` importing `pkg/contracts/otp` is allowed - `contracts` is a dependency-free shared
+> kernel (plain constants/structs), not infrastructure. The arch test (Task 8) forbids adapters and
+> `pkg/platform`, not `pkg/contracts`.
 
-Run: `go test ./internal/otp/ -run TestState -v`
-Expected: PASS.
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Commit** `feat: OTP request state model`
 
-- [ ] **Step 5: Commit**
+### Task 5: Entity + recipient masking (domain)
 
-```bash
-git add internal/otp/state.go internal/otp/state_test.go
-git commit -m "feat: OTP request state model"
-```
+**Files:** `domain/request.go` + `request_test.go`
 
-### Task 5: Ports (interfaces) + OTPRequest entity
-
-**Files:**
-- Create: `internal/otp/ports.go`, `internal/otp/request.go`, `internal/otp/request_test.go`
-
-**Interfaces:**
-- Produces:
-  - `type Channel string` (`ChannelEmail`).
-  - `type OTPRequest struct { ID, TenantID, Recipient string; Channel Channel; State State; CreatedAt time.Time }`.
-  - `type Clock interface { Now() time.Time }`.
-  - `type CodeStore interface { Save(ctx, key string, rec CodeRecord, ttl time.Duration) error; Get(ctx, key string) (CodeRecord, error); Delete(ctx, key string) error }` with `type CodeRecord struct { Hash, Salt string; Attempts int }`.
-  - `type Counter interface { Incr(ctx, key string, ttl time.Duration) (int64, error); Exists(ctx, key string) (bool, error); Set(ctx, key string, ttl time.Duration) error }`.
-  - `type Repo interface { InsertRequest(ctx, OTPRequest) error; UpdateState(ctx, id string, to State) error; InsertDeliveryLog(ctx, DeliveryLog) error; FindAPIKey(ctx, hashedKey string) (APIKey, error) }`.
-  - `type Publisher interface { Publish(ctx, topic string, event any) error }`.
-  - `type EmailProvider interface { Send(ctx, to, subject, body string) (providerMsgID string, err error) }`.
-
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Failing test**
 
 ```go
-// internal/otp/request_test.go
-package otp
+// request_test.go
+package domain
 
 import "testing"
 
@@ -406,25 +388,61 @@ func TestMaskRecipient(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `go test ./internal/otp/ -run TestMaskRecipient -v`
-Expected: FAIL — `undefined: MaskRecipient`.
-
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3: Implement**
 
 ```go
-// internal/otp/ports.go
-package otp
+// request.go
+package domain
 
 import (
-	"context"
+	"strings"
 	"time"
 )
 
 type Channel string
 
 const ChannelEmail Channel = "email"
+
+type OTPRequest struct {
+	ID        string
+	TenantID  string
+	Recipient string
+	Channel   Channel
+	State     State
+	CreatedAt time.Time
+}
+
+// MaskRecipient hides the local part of an email for logs/audit.
+func MaskRecipient(email string) string {
+	at := strings.IndexByte(email, '@')
+	if at <= 0 {
+		return "***"
+	}
+	return email[:1] + "***" + email[at:]
+}
+```
+
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Commit** `feat: OTPRequest entity and recipient masking`
+
+### Task 6: Ports (application layer)
+
+**Files:** `services/otp-api/internal/app/ports.go`
+
+Outbound ports the use cases depend on. These are the seams every adapter implements and every fake
+substitutes in tests. `EmailProvider` is intentionally absent here - email is otp-dispatcher's concern.
+
+- [ ] **Step 1: Write** `ports.go`
+
+```go
+// app/ports.go
+package app
+
+import (
+	"context"
+	"time"
+)
 
 type CodeRecord struct {
 	Hash     string
@@ -461,80 +479,51 @@ type Counter interface {
 }
 
 type Repo interface {
-	InsertRequest(ctx context.Context, r OTPRequest) error
-	UpdateState(ctx context.Context, id string, to State) error
-	InsertDeliveryLog(ctx context.Context, l DeliveryLog) error
+	InsertRequest(ctx context.Context, r Request) error
+	UpdateState(ctx context.Context, id, to string) error
 	FindAPIKey(ctx context.Context, hashedKey string) (APIKey, error)
+	ListAPIKeys(ctx context.Context, tenantID string) ([]APIKey, error)
+	ListRequests(ctx context.Context, tenantID string, limit int) ([]Request, error)
+	ListDeliveryLogs(ctx context.Context, tenantID string, limit int) ([]DeliveryLog, error)
 }
 
 type Publisher interface {
 	Publish(ctx context.Context, topic string, event any) error
 }
 
-type EmailProvider interface {
-	Send(ctx context.Context, to, subject, body string) (string, error)
-}
-```
-
-```go
-// internal/otp/request.go
-package otp
-
-import (
-	"strings"
-	"time"
-)
-
-type OTPRequest struct {
+// Request is the app-layer view of an OTP request row (decoupled from domain.OTPRequest
+// so the persistence shape can evolve independently).
+type Request struct {
 	ID        string
 	TenantID  string
 	Recipient string
-	Channel   Channel
-	State     State
+	Channel   string
+	State     string
 	CreatedAt time.Time
 }
-
-// MaskRecipient hides the local part of an email for logs/audit.
-func MaskRecipient(email string) string {
-	at := strings.IndexByte(email, '@')
-	if at <= 0 {
-		return "***"
-	}
-	return email[:1] + "***" + email[at:]
-}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 2: Commit** `feat: otp-api application ports`
 
-Run: `go test ./internal/otp/ -run TestMaskRecipient -v`
-Expected: PASS.
+### Task 7: Rate limiting (application)
 
-- [ ] **Step 5: Commit**
+**Files:** `app/ratelimit.go` + `ratelimit_test.go`
 
-```bash
-git add internal/otp/ports.go internal/otp/request.go internal/otp/request_test.go
-git commit -m "feat: domain ports and OTPRequest entity"
-```
+Rate limiting orchestrates over the `Counter` port, so it belongs in the application layer, not the
+pure domain. It returns `domain.ErrRateLimited` / `domain.ErrCooldown`.
 
-### Task 6: Four-layer rate limiting
-
-**Files:**
-- Create: `internal/otp/ratelimit.go`, `internal/otp/ratelimit_test.go`
-
-**Interfaces:**
-- Consumes: `Counter`, `Clock`.
-- Produces: `type LimitConfig struct { PerRecipientMax int; PerRecipientWindow time.Duration; PerTenantMax int; PerTenantWindow time.Duration; ResendCooldown time.Duration }` and `type RateLimiter struct{...}` with `func NewRateLimiter(Counter, LimitConfig) *RateLimiter` and `func (rl *RateLimiter) CheckAndCount(ctx, tenantID, recipient string) error` returning `ErrRateLimited` / `ErrCooldown`.
-
-- [ ] **Step 1: Write the failing test** (uses an in-memory fake Counter)
+- [ ] **Step 1: Failing test** (in-memory fake Counter)
 
 ```go
-// internal/otp/ratelimit_test.go
-package otp
+// ratelimit_test.go
+package app
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/duykhanh/worklane/services/otp-api/internal/domain"
 )
 
 type fakeCounter struct {
@@ -558,8 +547,7 @@ func (f *fakeCounter) Set(_ context.Context, k string, _ time.Duration) error {
 func TestRateLimiter_PerRecipient(t *testing.T) {
 	rl := NewRateLimiter(newFakeCounter(), LimitConfig{
 		PerRecipientMax: 3, PerRecipientWindow: time.Hour,
-		PerTenantMax: 100, PerTenantWindow: time.Hour,
-		ResendCooldown: 0,
+		PerTenantMax: 100, PerTenantWindow: time.Hour, ResendCooldown: 0,
 	})
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
@@ -567,7 +555,7 @@ func TestRateLimiter_PerRecipient(t *testing.T) {
 			t.Fatalf("send %d should pass: %v", i, err)
 		}
 	}
-	if err := rl.CheckAndCount(ctx, "t1", "a@b.co"); err != ErrRateLimited {
+	if err := rl.CheckAndCount(ctx, "t1", "a@b.co"); err != domain.ErrRateLimited {
 		t.Fatalf("4th send want ErrRateLimited, got %v", err)
 	}
 }
@@ -575,34 +563,31 @@ func TestRateLimiter_PerRecipient(t *testing.T) {
 func TestRateLimiter_Cooldown(t *testing.T) {
 	rl := NewRateLimiter(newFakeCounter(), LimitConfig{
 		PerRecipientMax: 10, PerRecipientWindow: time.Hour,
-		PerTenantMax: 100, PerTenantWindow: time.Hour,
-		ResendCooldown: time.Minute,
+		PerTenantMax: 100, PerTenantWindow: time.Hour, ResendCooldown: time.Minute,
 	})
 	ctx := context.Background()
 	if err := rl.CheckAndCount(ctx, "t1", "a@b.co"); err != nil {
 		t.Fatalf("first send should pass: %v", err)
 	}
-	if err := rl.CheckAndCount(ctx, "t1", "a@b.co"); err != ErrCooldown {
+	if err := rl.CheckAndCount(ctx, "t1", "a@b.co"); err != domain.ErrCooldown {
 		t.Fatalf("immediate resend want ErrCooldown, got %v", err)
 	}
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `go test ./internal/otp/ -run TestRateLimiter -v`
-Expected: FAIL — `undefined: NewRateLimiter`.
-
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3: Implement**
 
 ```go
-// internal/otp/ratelimit.go
-package otp
+// ratelimit.go
+package app
 
 import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/duykhanh/worklane/services/otp-api/internal/domain"
 )
 
 type LimitConfig struct {
@@ -618,13 +603,11 @@ type RateLimiter struct {
 	cfg LimitConfig
 }
 
-func NewRateLimiter(c Counter, cfg LimitConfig) *RateLimiter {
-	return &RateLimiter{c: c, cfg: cfg}
-}
+func NewRateLimiter(c Counter, cfg LimitConfig) *RateLimiter { return &RateLimiter{c: c, cfg: cfg} }
 
-// CheckAndCount enforces cooldown, per-recipient, and per-tenant limits, then
-// records the send. Order matters: cooldown is checked before counters so a
-// blocked resend does not consume quota.
+// CheckAndCount enforces cooldown, per-recipient, then per-tenant limits, then records
+// the send. Order matters: cooldown is checked before the counters so a blocked resend
+// does not consume quota.
 func (rl *RateLimiter) CheckAndCount(ctx context.Context, tenantID, recipient string) error {
 	cdKey := fmt.Sprintf("otp:cd:%s:%s", tenantID, recipient)
 	if rl.cfg.ResendCooldown > 0 {
@@ -633,7 +616,7 @@ func (rl *RateLimiter) CheckAndCount(ctx context.Context, tenantID, recipient st
 			return err
 		}
 		if exists {
-			return ErrCooldown
+			return domain.ErrCooldown
 		}
 	}
 
@@ -643,7 +626,7 @@ func (rl *RateLimiter) CheckAndCount(ctx context.Context, tenantID, recipient st
 		return err
 	}
 	if int(n) > rl.cfg.PerRecipientMax {
-		return ErrRateLimited
+		return domain.ErrRateLimited
 	}
 
 	tKey := fmt.Sprintf("otp:rl:tenant:%s", tenantID)
@@ -652,7 +635,7 @@ func (rl *RateLimiter) CheckAndCount(ctx context.Context, tenantID, recipient st
 		return err
 	}
 	if int(tn) > rl.cfg.PerTenantMax {
-		return ErrRateLimited
+		return domain.ErrRateLimited
 	}
 
 	if rl.cfg.ResendCooldown > 0 {
@@ -664,41 +647,25 @@ func (rl *RateLimiter) CheckAndCount(ctx context.Context, tenantID, recipient st
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Commit** `feat: multi-layer rate limiting (recipient, tenant, cooldown)`
 
-Run: `go test ./internal/otp/ -run TestRateLimiter -v`
-Expected: PASS.
+### Task 8: Use cases - Send & Verify + arch test
 
-- [ ] **Step 5: Commit**
+**Files:** `app/config.go`, `app/send.go`, `app/verify.go`, `app/usecase_test.go`, `app/arch_test.go`
 
-```bash
-git add internal/otp/ratelimit.go internal/otp/ratelimit_test.go
-git commit -m "feat: multi-layer rate limiting (recipient, tenant, cooldown)"
-```
-
-### Task 7: Domain service — SendOTP & VerifyOTP (incl. verify-attempt lock + idempotency)
-
-**Files:**
-- Create: `internal/otp/service.go`, `internal/otp/service_test.go`
-
-**Interfaces:**
-- Consumes: `CodeStore`, `Counter`, `Repo`, `Publisher`, `Clock`, `RateLimiter`.
-- Produces:
-  - `type Config struct { CodeLength int; TTL time.Duration; MaxVerifyAttempts int; Limits LimitConfig }`.
-  - `type Service struct{...}` + `func NewService(deps Deps, cfg Config) *Service` where `type Deps struct { Store CodeStore; Counter Counter; Repo Repo; Pub Publisher; Clock Clock }`.
-  - `func (s *Service) Send(ctx, in SendInput) (SendResult, error)` with `SendInput{TenantID, Recipient, IdempotencyKey string}` and `SendResult{RequestID, Code string}` (Code returned to the caller only so the dispatcher can template it; never logged).
-  - `func (s *Service) Verify(ctx, in VerifyInput) error` with `VerifyInput{TenantID, Recipient, Code string}` returning nil / `ErrCodeMismatch` / `ErrExpired` / `ErrTooManyAttempts` / `ErrNotFound`.
-
-- [ ] **Step 1: Write the failing test** (fakes for every port)
+- [ ] **Step 1: Failing test** (fakes for every port; same behavior the old plan asserted)
 
 ```go
-// internal/otp/service_test.go
-package otp
+// usecase_test.go
+package app
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/duykhanh/worklane/services/otp-api/internal/domain"
 )
 
 type fakeStore struct{ m map[string]CodeRecord }
@@ -711,25 +678,21 @@ func (f *fakeStore) Save(_ context.Context, k string, r CodeRecord, _ time.Durat
 func (f *fakeStore) Get(_ context.Context, k string) (CodeRecord, error) {
 	r, ok := f.m[k]
 	if !ok {
-		return CodeRecord{}, ErrNotFound
+		return CodeRecord{}, domain.ErrNotFound
 	}
 	return r, nil
 }
 func (f *fakeStore) Delete(_ context.Context, k string) error { delete(f.m, k); return nil }
 
-type fakeRepo struct{ states map[string]State }
+type fakeRepo struct{ states map[string]string }
 
-func newFakeRepo() *fakeRepo { return &fakeRepo{states: map[string]State{}} }
-func (f *fakeRepo) InsertRequest(_ context.Context, r OTPRequest) error {
-	f.states[r.ID] = r.State
-	return nil
-}
-func (f *fakeRepo) UpdateState(_ context.Context, id string, to State) error {
-	f.states[id] = to
-	return nil
-}
-func (f *fakeRepo) InsertDeliveryLog(context.Context, DeliveryLog) error { return nil }
-func (f *fakeRepo) FindAPIKey(context.Context, string) (APIKey, error)   { return APIKey{}, nil }
+func newFakeRepo() *fakeRepo { return &fakeRepo{states: map[string]string{}} }
+func (f *fakeRepo) InsertRequest(_ context.Context, r Request) error { f.states[r.ID] = r.State; return nil }
+func (f *fakeRepo) UpdateState(_ context.Context, id, to string) error { f.states[id] = to; return nil }
+func (f *fakeRepo) FindAPIKey(context.Context, string) (APIKey, error) { return APIKey{}, nil }
+func (f *fakeRepo) ListAPIKeys(context.Context, string) ([]APIKey, error) { return nil, nil }
+func (f *fakeRepo) ListRequests(context.Context, string, int) ([]Request, error) { return nil, nil }
+func (f *fakeRepo) ListDeliveryLogs(context.Context, string, int) ([]DeliveryLog, error) { return nil, nil }
 
 type fakePub struct{ events []string }
 
@@ -742,22 +705,21 @@ type fixedClock struct{ t time.Time }
 
 func (c fixedClock) Now() time.Time { return c.t }
 
-func newService() (*Service, *fakeStore, *fakePub) {
-	store := newFakeStore()
+func newSvc() (*Service, *fakePub) {
 	pub := &fakePub{}
-	svc := NewService(Deps{
-		Store: store, Counter: newFakeCounter(), Repo: newFakeRepo(),
+	svc := New(Deps{
+		Store: newFakeStore(), Counter: newFakeCounter(), Repo: newFakeRepo(),
 		Pub: pub, Clock: fixedClock{t: time.Unix(1000, 0)},
 	}, Config{
-		CodeLength: 6, TTL: 5 * time.Minute, MaxVerifyAttempts: 3,
+		CodeLength: 6, TTL: 5 * time.Minute, MaxVerifyAttempts: 3, RequestedTopic: "otp.requested",
 		Limits: LimitConfig{PerRecipientMax: 5, PerRecipientWindow: time.Hour,
 			PerTenantMax: 100, PerTenantWindow: time.Hour, ResendCooldown: 0},
 	})
-	return svc, store, pub
+	return svc, pub
 }
 
 func TestSend_ThenVerify_Success(t *testing.T) {
-	svc, _, pub := newService()
+	svc, pub := newSvc()
 	ctx := context.Background()
 	res, err := svc.Send(ctx, SendInput{TenantID: "t1", Recipient: "a@b.co"})
 	if err != nil {
@@ -772,22 +734,21 @@ func TestSend_ThenVerify_Success(t *testing.T) {
 }
 
 func TestVerify_WrongCode_LocksAfterMax(t *testing.T) {
-	svc, _, _ := newService()
+	svc, _ := newSvc()
 	ctx := context.Background()
-	res, _ := svc.Send(ctx, SendInput{TenantID: "t1", Recipient: "a@b.co"})
-	_ = res
+	_, _ = svc.Send(ctx, SendInput{TenantID: "t1", Recipient: "a@b.co"})
 	for i := 0; i < 3; i++ {
-		if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: "000000"}); err != ErrCodeMismatch {
+		if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: "000000"}); err != domain.ErrCodeMismatch {
 			t.Fatalf("attempt %d want ErrCodeMismatch, got %v", i, err)
 		}
 	}
-	if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: "000000"}); err != ErrTooManyAttempts {
+	if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: "000000"}); err != domain.ErrTooManyAttempts {
 		t.Fatalf("want ErrTooManyAttempts after max, got %v", err)
 	}
 }
 
 func TestSend_Idempotency_Collapses(t *testing.T) {
-	svc, _, pub := newService()
+	svc, pub := newSvc()
 	ctx := context.Background()
 	in := SendInput{TenantID: "t1", Recipient: "a@b.co", IdempotencyKey: "abc"}
 	r1, _ := svc.Send(ctx, in)
@@ -801,29 +762,20 @@ func TestSend_Idempotency_Collapses(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `go test ./internal/otp/ -run 'TestSend|TestVerify' -v`
-Expected: FAIL — `undefined: NewService`.
-
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3: Implement** the use cases
 
 ```go
-// internal/otp/service.go
-package otp
+// config.go
+package app
 
-import (
-	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
-	"time"
-)
+import "time"
 
 type Config struct {
 	CodeLength        int
 	TTL               time.Duration
 	MaxVerifyAttempts int
+	RequestedTopic    string
 	Limits            LimitConfig
 }
 
@@ -841,23 +793,30 @@ type Service struct {
 	rl  *RateLimiter
 }
 
-func NewService(d Deps, cfg Config) *Service {
+func New(d Deps, cfg Config) *Service {
 	return &Service{d: d, cfg: cfg, rl: NewRateLimiter(d.Counter, cfg.Limits)}
 }
+```
+
+```go
+// send.go
+package app
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+
+	"github.com/duykhanh/worklane/services/otp-api/internal/domain"
+	contracts "github.com/duykhanh/worklane/pkg/contracts/otp"
+)
 
 type SendInput struct {
-	TenantID       string
-	Recipient      string
-	IdempotencyKey string
+	TenantID, Recipient, IdempotencyKey string
 }
 type SendResult struct {
-	RequestID string
-	Code      string
-}
-type VerifyInput struct {
-	TenantID  string
-	Recipient string
-	Code      string
+	RequestID, Code string
 }
 
 func codeKey(tenantID, recipient string) string {
@@ -875,7 +834,7 @@ func (s *Service) Send(ctx context.Context, in SendInput) (SendResult, error) {
 			if err != nil {
 				return SendResult{}, err
 			}
-			return SendResult{RequestID: rec.Salt, Code: ""}, nil // Salt doubles as request id below
+			return SendResult{RequestID: rec.Salt}, nil // salt == request id (see below)
 		}
 		if err := s.d.Counter.Set(ctx, idemKey, s.cfg.TTL); err != nil {
 			return SendResult{}, err
@@ -886,53 +845,31 @@ func (s *Service) Send(ctx context.Context, in SendInput) (SendResult, error) {
 		return SendResult{}, err
 	}
 
-	code, err := GenerateCode(s.cfg.CodeLength)
+	code, err := domain.GenerateCode(s.cfg.CodeLength)
 	if err != nil {
 		return SendResult{}, err
 	}
 	requestID := newID()
-	salt := requestID // reuse request id as salt; unique per request
-	rec := CodeRecord{Hash: HashCode(code, salt), Salt: salt, Attempts: 0}
+	salt := requestID // reuse request id as the per-request salt (unique per request)
+	rec := CodeRecord{Hash: domain.HashCode(code, salt), Salt: salt}
 	if err := s.d.Store.Save(ctx, codeKey(in.TenantID, in.Recipient), rec, s.cfg.TTL); err != nil {
 		return SendResult{}, err
 	}
 
-	req := OTPRequest{
+	if err := s.d.Repo.InsertRequest(ctx, Request{
 		ID: requestID, TenantID: in.TenantID, Recipient: in.Recipient,
-		Channel: ChannelEmail, State: StateRequested, CreatedAt: s.d.Clock.Now(),
-	}
-	if err := s.d.Repo.InsertRequest(ctx, req); err != nil {
+		Channel: string(domain.ChannelEmail), State: contracts.StateRequested, CreatedAt: s.d.Clock.Now(),
+	}); err != nil {
 		return SendResult{}, err
 	}
-	event := map[string]string{
-		"request_id": requestID, "tenant_id": in.TenantID,
-		"recipient": in.Recipient, "channel": string(ChannelEmail), "code": code,
+	evt := contracts.RequestedEvent{
+		RequestID: requestID, TenantID: in.TenantID, Recipient: in.Recipient,
+		Channel: string(domain.ChannelEmail), Code: code,
 	}
-	if err := s.d.Pub.Publish(ctx, "otp.requested", event); err != nil {
+	if err := s.d.Pub.Publish(ctx, s.cfg.RequestedTopic, evt); err != nil {
 		return SendResult{}, err
 	}
 	return SendResult{RequestID: requestID, Code: code}, nil
-}
-
-func (s *Service) Verify(ctx context.Context, in VerifyInput) error {
-	key := codeKey(in.TenantID, in.Recipient)
-	rec, err := s.d.Store.Get(ctx, key)
-	if err != nil {
-		return err // ErrNotFound when expired/absent
-	}
-	if rec.Attempts >= s.cfg.MaxVerifyAttempts {
-		return ErrTooManyAttempts
-	}
-	if !VerifyHash(rec.Hash, in.Code, rec.Salt) {
-		rec.Attempts++
-		_ = s.d.Store.Save(ctx, key, rec, s.cfg.TTL)
-		if rec.Attempts >= s.cfg.MaxVerifyAttempts {
-			return ErrTooManyAttempts
-		}
-		return ErrCodeMismatch
-	}
-	_ = s.d.Store.Delete(ctx, key)
-	return s.d.Repo.UpdateState(ctx, rec.Salt, StateVerified)
 }
 
 func newID() string {
@@ -942,30 +879,49 @@ func newID() string {
 }
 ```
 
-> Note for the implementer: the idempotency branch above returns the prior request id via the stored `Salt` (which equals the request id). If the executing engineer finds this coupling unclear, store an explicit `RequestID` field on `CodeRecord` instead and return it — update `ports.go` and the fakes accordingly. Keep the behavior asserted by `TestSend_Idempotency_Collapses`.
+```go
+// verify.go
+package app
 
-- [ ] **Step 4: Run test to verify it passes**
+import (
+	"context"
 
-Run: `go test ./internal/otp/ -run 'TestSend|TestVerify' -v`
-Expected: PASS.
+	"github.com/duykhanh/worklane/services/otp-api/internal/domain"
+	contracts "github.com/duykhanh/worklane/pkg/contracts/otp"
+)
 
-- [ ] **Step 5: Commit**
+type VerifyInput struct {
+	TenantID, Recipient, Code string
+}
 
-```bash
-git add internal/otp/service.go internal/otp/service_test.go
-git commit -m "feat: OTP domain service (send/verify, attempt lock, idempotency)"
+func (s *Service) Verify(ctx context.Context, in VerifyInput) error {
+	key := codeKey(in.TenantID, in.Recipient)
+	rec, err := s.d.Store.Get(ctx, key)
+	if err != nil {
+		return err // ErrNotFound when expired/absent
+	}
+	if rec.Attempts >= s.cfg.MaxVerifyAttempts {
+		return domain.ErrTooManyAttempts
+	}
+	if !domain.VerifyHash(rec.Hash, in.Code, rec.Salt) {
+		rec.Attempts++
+		_ = s.d.Store.Save(ctx, key, rec, s.cfg.TTL)
+		if rec.Attempts >= s.cfg.MaxVerifyAttempts {
+			return domain.ErrTooManyAttempts
+		}
+		return domain.ErrCodeMismatch
+	}
+	_ = s.d.Store.Delete(ctx, key)
+	return s.d.Repo.UpdateState(ctx, rec.Salt, contracts.StateVerified)
+}
 ```
 
-### Task 8: Architecture test (domain purity) + coverage gate
-
-**Files:**
-- Create: `internal/otp/arch_test.go`
-
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Architecture test** (`arch_test.go`, package `app_test` at the domain root)
 
 ```go
-// internal/otp/arch_test.go
-package otp_test
+// services/otp-api/internal/arch_test.go
+package internal_test
 
 import (
 	"go/parser"
@@ -976,22 +932,28 @@ import (
 	"testing"
 )
 
-func TestDomainHasNoInfraImports(t *testing.T) {
-	forbidden := []string{"redis", "pgx", "kafka", "zeromicro", "go-zero", "resend"}
+// Domain must import no infrastructure; app must import no adapter/platform.
+func TestPurity(t *testing.T) {
+	forbidden := map[string][]string{
+		"domain": {"redis", "gorm", "sarama", "gin", "resend", "/adapters/", "/pkg/platform/"},
+		"app":    {"redis", "gorm", "sarama", "gin", "resend", "/adapters/", "/pkg/platform/"},
+	}
 	fset := token.NewFileSet()
-	entries, _ := os.ReadDir(".")
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
-			continue
-		}
-		f, err := parser.ParseFile(fset, filepath.Join(".", e.Name()), nil, parser.ImportsOnly)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, imp := range f.Imports {
-			for _, bad := range forbidden {
-				if strings.Contains(imp.Path.Value, bad) {
-					t.Fatalf("%s imports forbidden %s", e.Name(), imp.Path.Value)
+	for pkg, bad := range forbidden {
+		entries, _ := os.ReadDir(pkg)
+		for _, e := range entries {
+			if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+				continue
+			}
+			f, err := parser.ParseFile(fset, filepath.Join(pkg, e.Name()), nil, parser.ImportsOnly)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, imp := range f.Imports {
+				for _, b := range bad {
+					if strings.Contains(imp.Path.Value, b) {
+						t.Fatalf("%s/%s imports forbidden %s", pkg, e.Name(), imp.Path.Value)
+					}
 				}
 			}
 		}
@@ -999,246 +961,241 @@ func TestDomainHasNoInfraImports(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it passes** (domain is already pure)
+- [ ] **Step 6:** `make cover` → ≥ 80% on `services/otp-api/internal/...`. If below, add table tests for
+  `GenerateCode` bounds and `Verify` `ErrNotFound` path.
+- [ ] **Step 7: Commit** `feat: otp-api send/verify use cases + purity/coverage gate`
 
-Run: `go test ./internal/otp/ -run TestDomainHasNoInfraImports -v`
-Expected: PASS.
-
-- [ ] **Step 3: Check coverage meets 80%**
-
-Run: `make cover`
-Expected: total coverage for `internal/otp` ≥ 80%. If below, add table tests for `GenerateCode` bounds and `Verify` `ErrNotFound`/`ErrExpired` paths.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add internal/otp/arch_test.go
-git commit -m "test: enforce domain purity and coverage gate"
-```
+> **Idempotency note (unchanged from the proven design):** the idempotency branch returns the prior
+> request id via the stored `Salt` (which equals the request id). If this coupling reads unclear during
+> implementation, add an explicit `RequestID` field to `CodeRecord` and return it - keep the behavior
+> asserted by `TestSend_Idempotency_Collapses`.
 
 ---
 
-## Phase 2 — Adapters (integration-tested with testcontainers)
+## Phase 2 - Adapters (integration-tested with testcontainers)
 
-### Task 9: Postgres schema + repo
+Adapters live under each service's `internal/adapters/outbound/` and implement the app ports. Shared
+client construction (GORM DB, redis client, sarama config) lives in `pkg/platform/*`.
 
-**Files:**
-- Create: `internal/adapter/pgrepo/migrations/0001_init.sql`, `internal/adapter/pgrepo/repo.go`, `internal/adapter/pgrepo/repo_test.go`
+### Task 9: MySQL migrations + GORM repo (otp-api)
 
-**Interfaces:**
-- Consumes: `otp.Repo`.
-- Produces: `func New(pool *pgxpool.Pool) *Repo` implementing `otp.Repo`.
+**Files:** `db/otp/migrations/0001_init.up.sql` (+ `.down.sql`), `pkg/platform/mysql/mysql.go`,
+`services/otp-api/internal/adapters/outbound/mysqlrepo/repo.go` + `repo_test.go`
 
-- [ ] **Step 1: Write the migration**
+- [ ] **Step 1: Migration**
 
 ```sql
--- internal/adapter/pgrepo/migrations/0001_init.sql
+-- db/otp/migrations/0001_init.up.sql
 CREATE TABLE tenants (
-  id UUID PRIMARY KEY,
-  name TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id CHAR(36) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE api_keys (
-  id UUID PRIMARY KEY,
-  tenant_id UUID NOT NULL REFERENCES tenants(id),
-  hashed_key TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL DEFAULT 'active',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id CHAR(36) PRIMARY KEY,
+  tenant_id CHAR(36) NOT NULL,
+  hashed_key VARCHAR(128) NOT NULL UNIQUE,
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_api_keys_tenant (tenant_id)
 );
 CREATE TABLE otp_requests (
-  id UUID PRIMARY KEY,
-  tenant_id UUID NOT NULL REFERENCES tenants(id),
-  recipient_masked TEXT NOT NULL,
-  channel TEXT NOT NULL,
-  state TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id CHAR(36) PRIMARY KEY,
+  tenant_id CHAR(36) NOT NULL,
+  recipient_masked VARCHAR(255) NOT NULL,
+  channel VARCHAR(16) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_requests_tenant (tenant_id, created_at)
 );
 CREATE TABLE delivery_logs (
-  id BIGSERIAL PRIMARY KEY,
-  request_id UUID NOT NULL,
-  provider TEXT NOT NULL,
-  status TEXT NOT NULL,
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  request_id CHAR(36) NOT NULL,
+  tenant_id CHAR(36) NOT NULL,
+  provider VARCHAR(32) NOT NULL,
+  status VARCHAR(16) NOT NULL,
   latency_ms BIGINT NOT NULL,
   error TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_logs_tenant (tenant_id, created_at)
 );
 CREATE TABLE templates (
-  id UUID PRIMARY KEY,
-  channel TEXT NOT NULL,
-  locale TEXT NOT NULL,
-  subject TEXT NOT NULL,
+  id CHAR(36) PRIMARY KEY,
+  channel VARCHAR(16) NOT NULL,
+  locale VARCHAR(16) NOT NULL,
+  subject VARCHAR(255) NOT NULL,
   body TEXT NOT NULL
 );
 ```
 
-- [ ] **Step 2: Write the failing integration test** (testcontainers Postgres)
+- [ ] **Step 2:** `pkg/platform/mysql` - `Open(dsn) (*gorm.DB, error)` (GORM + `gorm.io/driver/mysql`) and
+  `Migrate(dsn, dir)` running `golang-migrate` on `db/otp/migrations`.
+- [ ] **Step 3: Failing integration test** (`//go:build integration`, testcontainers MySQL): run
+  migrations, then insert a tenant + api key and assert `FindAPIKey` returns it; `InsertRequest` then
+  `UpdateState('verified')` updates the row; `recipient_masked` is stored via `domain.MaskRecipient`.
+- [ ] **Step 4: Implement** `mysqlrepo.New(db *gorm.DB) *Repo` with GORM model structs (table-mapped) and
+  methods for `InsertRequest`, `UpdateState`, `FindAPIKey`, `ListAPIKeys`, `ListRequests`,
+  `ListDeliveryLogs`, `InsertDeliveryLog`. GORM uses parameterized queries by default (no SQL injection).
+- [ ] **Step 5:** `go test -tags=integration ./services/otp-api/internal/adapters/outbound/mysqlrepo/ -v` → PASS.
+- [ ] **Step 6: Commit** `feat: mysql migrations and gorm repo (otp-api)`
 
-```go
-// internal/adapter/pgrepo/repo_test.go
-//go:build integration
-package pgrepo_test
-// Spin up a postgres testcontainer, run 0001_init.sql, then:
-//   - insert a tenant + api key, FindAPIKey by hashed_key returns it
-//   - InsertRequest then UpdateState to 'verified' updates the row
-// Assert each. (Full container boilerplate written here by the implementer
-// following testcontainers-go postgres module docs.)
-```
+### Task 10: Redis adapter - CodeStore + Counter (otp-api)
 
-- [ ] **Step 3: Run to verify it fails**
+**Files:** `pkg/platform/redis/redis.go` (client + typed key builders), `services/otp-api/internal/adapters/outbound/redisstore/store.go` + `store_test.go`
 
-Run: `go test -tags=integration ./internal/adapter/pgrepo/ -v`
-Expected: FAIL — repo not implemented.
+- [ ] **Step 1:** Failing integration test (testcontainers Redis): `Incr` returns increasing values and
+  sets a TTL on first hit; `Save`/`Get` round-trips a `CodeRecord` (JSON); `Get` on a missing key returns
+  `domain.ErrNotFound`; `Exists`/`Set` behave for cooldown markers.
+- [ ] **Step 2:** run `-tags=integration` → FAIL.
+- [ ] **Step 3:** Implement `redisstore.New(client *redis.Client) *Store` (`redis/go-redis/v9`) mapping
+  `redis.Nil` → `domain.ErrNotFound`; `Incr` = `INCR` then `EXPIRE` when the value is 1.
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Commit** `feat: redis code store and counter adapter`
 
-- [ ] **Step 4: Implement `Repo`** using `pgxpool` with parameterized queries for `InsertRequest`, `UpdateState`, `InsertDeliveryLog`, `FindAPIKey`. Store `recipient_masked` via `otp.MaskRecipient`.
+### Task 11: Kafka producer + consumer wrapper (sarama)
 
-- [ ] **Step 5: Run to verify it passes**
+**Files:** `pkg/platform/kafka/producer.go`, `consumer.go`, `envelope.go`, `producer_test.go`
 
-Run: `go test -tags=integration ./internal/adapter/pgrepo/ -v`
-Expected: PASS.
+Mirror the production convention: a typed envelope with a discriminator, config-driven topics, and a
+fire-and-forget publish using `context.WithoutCancel`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 1:** Failing integration test (testcontainers Redpanda): publish a `RequestedEvent` to
+  `otp.requested`; a consumer group receives the same bytes and decodes it.
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** Implement with `github.com/IBM/sarama`:
+  - `Producer` (sync producer) implementing `app.Publisher`: JSON-encodes `{msg_type, data}`, keys by
+    `request_id`.
+  - `Consumer` (consumer group) with `Start(ctx, handler func(ctx, []byte) error)`.
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Commit** `feat: sarama kafka producer/consumer wrapper with typed envelope`
 
-```bash
-git add internal/adapter/pgrepo/
-git commit -m "feat: postgres schema and repo adapter"
-```
+### Task 12: Resend email provider (otp-dispatcher)
 
-### Task 10: Redis adapter (CodeStore + Counter)
+**Files:** `services/otp-dispatcher/internal/adapters/outbound/resendmail/provider.go` + `provider_test.go`
 
-**Files:**
-- Create: `internal/adapter/redisstore/store.go`, `internal/adapter/redisstore/store_test.go`
-
-**Interfaces:**
-- Produces: `func New(client *redis.Client) *Store` implementing both `otp.CodeStore` and `otp.Counter`. `Incr` uses `INCR` + `EXPIRE` on first hit; `Set` uses `SET key 1 EX ttl`; `Exists` uses `EXISTS`; `Save` stores the `CodeRecord` as a JSON string with `SET ... EX`.
-
-- [ ] **Step 1:** Write failing integration test (testcontainers Redis): `Incr` returns increasing values and TTL is set; `Save`/`Get` round-trips a `CodeRecord`; `Get` on a missing key returns `otp.ErrNotFound`.
-- [ ] **Step 2:** Run `go test -tags=integration ./internal/adapter/redisstore/ -v` → FAIL.
-- [ ] **Step 3:** Implement `Store` with `github.com/redis/go-redis/v9`, JSON-encoding `CodeRecord`, mapping redis.Nil to `otp.ErrNotFound`.
-- [ ] **Step 4:** Run test → PASS.
-- [ ] **Step 5:** Commit `feat: redis code store and counter adapter`.
-
-### Task 11: Kafka producer + consumer
-
-**Files:**
-- Create: `internal/adapter/kafkaev/producer.go`, `internal/adapter/kafkaev/consumer.go`, `internal/adapter/kafkaev/producer_test.go`
-
-**Interfaces:**
-- Produces: `func NewProducer(brokers []string) *Producer` implementing `otp.Publisher` (JSON-encodes the event, keys by `request_id`); `func NewConsumer(brokers []string, topic, group string, handle func(ctx, []byte) error) *Consumer` with `Start(ctx)`.
-
-- [ ] **Step 1:** Write failing integration test (testcontainers Kafka/Redpanda): publish to `otp.requested`, consumer receives the same bytes.
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** Implement with `github.com/segmentio/kafka-go`.
-- [ ] **Step 4:** Run → PASS.
-- [ ] **Step 5:** Commit `feat: kafka producer and consumer adapter`.
-
-### Task 12: Resend email provider
-
-**Files:**
-- Create: `internal/adapter/resendmail/provider.go`, `internal/adapter/resendmail/provider_test.go`
-
-**Interfaces:**
-- Produces: `func New(apiKey, from string, httpClient *http.Client) *Provider` implementing `otp.EmailProvider`. `Send` POSTs to `https://api.resend.com/emails` with bearer auth; returns the Resend message id.
-
-- [ ] **Step 1:** Write failing unit test with an `httptest.Server` stub asserting the request body/headers and returning a fake id.
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** Implement the HTTP call (inject base URL so the test points at the stub).
-- [ ] **Step 4:** Run → PASS.
-- [ ] **Step 5:** Commit `feat: resend email provider adapter`.
+- [ ] **Step 1:** Failing unit test with an `httptest.Server` stub asserting request body/headers and
+  returning a fake message id.
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** Implement `New(apiKey, from string, baseURL string, hc *http.Client) *Provider`
+  implementing the dispatcher's `EmailProvider` port; `Send` POSTs to `{baseURL}/emails` with bearer
+  auth and returns the Resend message id. Inject `baseURL` so the test points at the stub.
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Commit** `feat: resend email provider adapter`
 
 ---
 
-## Phase 3 — Services
+## Phase 3 - Services (Gin + sarama consumer)
 
-### Task 13: otp-api (go-zero) — send/verify + API-key auth
+### Task 13: otp-api - Gin HTTP + API-key middleware + read endpoints
 
-**Files:**
-- Create: `otp-api.api` (go-zero API DSL), generate with `goctl api go`, then hand-write `internal/transport/httpapi/sendlogic.go`, `verifylogic.go`, `internal/transport/httpapi/apikeymiddleware.go`, `cmd/otp-api/main.go`.
+**Files:** `pkg/platform/httpserver/`, `services/otp-api/internal/adapters/inbound/http/` (`router.go`,
+`send.go`, `verify.go`, `reads.go`, `apikey.go`, `dto.go`, `errors.go`, `handlers_test.go`),
+`services/otp-api/main.go`
 
-**Interfaces:**
-- Consumes: `otp.Service`, `otp.Repo` (for `FindAPIKey`).
-- Produces: HTTP `POST /v1/otp/send` → `202 {request_id}`; `POST /v1/otp/verify` → `200 {status:"verified"}` or `4xx`; plus three tenant-scoped read endpoints for the dashboard: `GET /v1/api-keys`, `GET /v1/otp/requests`, `GET /v1/delivery-logs`. Middleware resolves `Authorization: Bearer <api-key>` → hashes it → `Repo.FindAPIKey` → injects `tenant_id` into context.
+**Produces:** `POST /v1/otp/send` → `202 {request_id}`; `POST /v1/otp/verify` → `200 {status:"verified"}`
+or `4xx`; read endpoints `GET /v1/api-keys`, `GET /v1/otp/requests`, `GET /v1/delivery-logs` (all
+tenant-scoped). API-key middleware resolves `Authorization: Bearer <key>` → hashes it →
+`Repo.FindAPIKey` → injects `tenant_id` into the Gin context.
 
-- [ ] **Step 1:** Write the `.api` DSL (routes, request/response types) and an httptest-level test for `sendlogic` that injects a fake `otp.Service` and asserts a valid request yields `request_id` and a rate-limited one yields `429`.
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** `goctl api go -api otp-api.api -dir .`; implement the two logic files delegating to `otp.Service`; implement API-key middleware; map domain errors → HTTP codes (`ErrRateLimited/ErrCooldown`→429, `ErrCodeMismatch`→401, `ErrExpired/ErrNotFound`→410/404, `ErrTooManyAttempts`→429).
-- [ ] **Step 4:** Run → PASS.
-- [ ] **Step 5:** Commit `feat: otp-api http service with api-key auth`.
+- [ ] **Step 1:** `httptest`-level test injecting a fake `*app.Service`: a valid `send` yields `202` +
+  `request_id`; a rate-limited one yields `429`; missing/invalid key yields `401`.
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** Implement handlers delegating to `app.Service`; a central error mapper translates
+  domain errors → HTTP: `ErrRateLimited`/`ErrCooldown`/`ErrTooManyAttempts` → `429`, `ErrCodeMismatch`
+  → `401`, `ErrNotFound`/`ErrExpired` → `410`. Wire everything in `main.go` (composition root):
+  construct GORM/redis/sarama clients from config, build the adapters, inject into `app.New(...)`, mount
+  the Gin router via `pkg/platform/httpserver`.
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Commit** `feat: otp-api gin service with api-key auth and read endpoints`
 
-> The three read endpoints require adding list methods to the `otp.Repo` port and `pgrepo`: `ListAPIKeys(ctx, tenantID) ([]APIKey, error)`, `ListRequests(ctx, tenantID string, limit int) ([]OTPRequest, error)`, `ListDeliveryLogs(ctx, tenantID string, limit int) ([]DeliveryLog, error)`. Add these to `ports.go` (Task 5), implement in `pgrepo` (Task 9), and update the fakes. Do this as the first step of Task 13.
+### Task 14: otp-dispatcher - consume otp.requested, send email, log delivery
 
-### Task 14: dispatcher — consume otp.requested, send email, log delivery
+**Files:** `services/otp-dispatcher/internal/app/` (`ports.go`, `handler.go`, `template.go`,
+`handler_test.go`), `services/otp-dispatcher/internal/adapters/inbound/kafka/consumer.go`,
+`services/otp-dispatcher/main.go`
 
-**Files:**
-- Create: `internal/transport/dispatch/handler.go`, `internal/transport/dispatch/handler_test.go`, `cmd/dispatcher/main.go`
+**Dispatcher ports:** `EmailProvider` (Send), `Repo` (InsertDeliveryLog + UpdateState), `Publisher`
+(sent/failed/dlq).
 
-**Interfaces:**
-- Consumes: `otp.EmailProvider`, `otp.Repo`, `otp.Publisher`.
-- Produces: `func NewHandler(mail otp.EmailProvider, repo otp.Repo, pub otp.Publisher, tmpl Template) *Handler`; `func (h *Handler) Handle(ctx, raw []byte) error` — decodes the event, renders the email from `tmpl`, sends, writes a `DeliveryLog`, updates request state to `sent`/`failed`, publishes `otp.sent`/`otp.failed`; on send error publishes to `otp.dlq` (no drainer in MVP).
-
-- [ ] **Step 1:** Write failing unit test with fake mail/repo/pub: a valid event triggers `mail.Send`, a `DeliveryLog` insert, state→`sent`, and an `otp.sent` publish; a failing `mail.Send` yields state→`failed` and an `otp.dlq` publish.
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** Implement `Handle` + a minimal `Template{Subject, BodyFmt}` renderer (`fmt.Sprintf(BodyFmt, code)`).
-- [ ] **Step 4:** Run → PASS.
-- [ ] **Step 5:** Commit `feat: dispatcher email delivery handler`.
+- [ ] **Step 1:** Failing unit test with fake mail/repo/pub: a valid `RequestedEvent` triggers
+  `mail.Send`, a `DeliveryLog` insert, state → `sent`, and an `otp.sent` publish; a failing `mail.Send`
+  yields state → `failed`, an `otp.failed` publish, and a publish to `otp.dlq` (no drainer in MVP).
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** Implement `Handle(ctx, raw []byte) error` - decode the shared `contracts.RequestedEvent`,
+  render the email from a minimal `Template{Subject, BodyFmt}` (`fmt.Sprintf(BodyFmt, code)`), send,
+  write the delivery log, update state, publish. Wire the sarama consumer + adapters in `main.go`.
+- [ ] **Step 4:** run → PASS.
+- [ ] **Step 5: Commit** `feat: dispatcher email delivery handler`
 
 ---
 
-## Phase 4 — Compose + end-to-end
+## Phase 4 - Compose + end-to-end (Traefik)
 
-### Task 15: docker-compose stack + APISIX gateway
+### Task 15: docker-compose stack + Traefik gateway
 
-**Files:**
-- Create: `deploy/docker-compose.yml`, `deploy/apisix/apisix.yaml`, `deploy/apisix/routes.yaml`, `.env.example`
+**Files:** `deploy/compose/docker-compose.yml`, `deploy/traefik/traefik.yml`, `deploy/traefik/dynamic.yml`,
+`.env.example`, `services/*/Dockerfile`
 
-- [ ] **Step 1:** Write `docker-compose.yml` with services: `postgres`, `redis`, `redpanda` (Kafka API), `apisix`, `otp-api`, `dispatcher`. Wire env (`RESEND_API_KEY`, brokers, DSNs).
-- [ ] **Step 2:** Configure APISIX standalone routes: route `/v1/otp/*` → `otp-api:8888`, enable `key-auth` plugin and `limit-count` (edge rate limit), and a `cors` plugin allowing the Vercel origin.
-- [ ] **Step 3:** `docker compose up -d` then verify `curl localhost:9080/v1/otp/send` without a key returns `401` from APISIX.
-- [ ] **Step 4:** Commit `chore: docker-compose stack with apisix gateway`.
+- [ ] **Step 1:** `docker-compose.yml` with services: `mysql`, `redis`, `redpanda` (Kafka API),
+  `traefik`, `otp-api`, `otp-dispatcher`. Wire env (`RESEND_API_KEY`, brokers, DSNs, topics).
+- [ ] **Step 2:** Traefik config - static (`traefik.yml`: entrypoints, docker provider) + dynamic
+  (`dynamic.yml` or Docker labels): a router for `/v1/*` → `otp-api`, a **rate-limit** middleware (edge),
+  and a **CORS** middleware (`headers`) allowing the Vercel origin. TLS is left to Cloudflare in prod;
+  local is plain HTTP on `:80`. API-key auth is **not** at Traefik - it is enforced in `otp-api`.
+- [ ] **Step 3:** `docker compose up -d`, then `curl -i localhost/v1/otp/send` (no key) → `401` from
+  `otp-api` through Traefik; with a seeded key (Task 17) → `202`.
+- [ ] **Step 4: Commit** `chore: docker-compose stack with traefik gateway`
 
 ### Task 16: End-to-end send→verify test
 
-**Files:**
-- Create: `test/e2e/e2e_test.go` (build tag `e2e`), `test/e2e/README.md`
+**Files:** `test/e2e/e2e_test.go` (build tag `e2e`), `test/e2e/README.md`
 
-- [ ] **Step 1:** Write an e2e test that (against a running compose stack + a seeded key from Task 17): calls `POST /v1/otp/send`, reads the delivered code from a **test email inbox** (use Resend's sandbox or a MailHog SMTP fallback for e2e), then calls `POST /v1/otp/verify` and asserts `200`. Also assert a wrong code returns `401` and exceeding attempts returns `429`.
-- [ ] **Step 2:** Run `go test -tags=e2e ./test/e2e/ -v` → FAIL (until stack + seed exist).
-- [ ] **Step 3:** Document the run steps in `test/e2e/README.md` (compose up, seed, run).
-- [ ] **Step 4:** Once green, Commit `test: end-to-end send/verify through apisix`.
+- [ ] **Step 1:** e2e test against a running compose stack + a seeded key (Task 17): `POST /v1/otp/send`,
+  read the delivered code from a **MailHog** SMTP container (deterministic; Resend stays for
+  real/manual verification), then `POST /v1/otp/verify` → `200`. Also assert wrong code → `401` and
+  exceeding attempts → `429`.
+- [ ] **Step 2:** `go test -tags=e2e ./test/e2e/ -v` → FAIL until stack + seed exist.
+- [ ] **Step 3:** Document run steps in `test/e2e/README.md`.
+- [ ] **Step 4:** Once green, Commit `test: end-to-end send/verify through traefik`.
 
-> **Delivery caveat:** for automated e2e, prefer a MailHog SMTP container so the test can read the code programmatically; keep Resend for real/manual verification. This keeps the pipeline deterministic without a real inbox.
+> **Delivery caveat:** for automated e2e prefer a MailHog container so the test reads the code
+> programmatically; keep Resend for real verification. Deterministic pipeline without a real inbox.
 
 ---
 
-## Phase 5 — Seed CLI + Dashboard
+## Phase 5 - Seed CLI + Dashboard
 
 ### Task 17: Seed CLI (tenant + API key)
 
-**Files:**
-- Create: `cmd/seed/main.go`, `cmd/seed/main_test.go`
+**Files:** `services/seed/main.go`, `services/seed/apikey.go` + `apikey_test.go`
 
-**Interfaces:**
-- Produces: `otp-seed --name "<tenant>"` prints a freshly generated **plaintext API key once** and stores only its hash (`otp.HashCode(key, "")` or a dedicated key-hash function) plus a new tenant row.
+- [ ] **Step 1:** Unit test for the key generator: `GenerateAPIKey()` returns a 32+ char URL-safe token,
+  and its stored hash verifies (`domain.HashCode(key, "")` or a dedicated key-hash helper).
+- [ ] **Step 2:** run → FAIL.
+- [ ] **Step 3:** Implement `GenerateAPIKey` (crypto/rand, base64url) and a `main` that inserts a tenant +
+  api_key via `mysqlrepo`. Prints the **plaintext key once**; stores only the hash.
+- [ ] **Step 4:** run → PASS; then `go run ./services/seed --name demo` against compose MySQL; capture the key.
+- [ ] **Step 5: Commit** `feat: seed CLI for tenant and api key`
 
-- [ ] **Step 1:** Write a unit test for the key generator: `GenerateAPIKey()` returns a 32+ char URL-safe token, and its stored hash verifies.
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** Implement `GenerateAPIKey` (crypto/rand, base64url) and a `main` that inserts tenant + api_key via `pgrepo`.
-- [ ] **Step 4:** Run → PASS; manually run `go run ./cmd/seed --name demo` against compose Postgres and capture the key.
-- [ ] **Step 5:** Commit `feat: seed CLI for tenant and api key`.
+### Task 18: Next.js dashboard - 3 read-only screens
 
-### Task 18: Next.js dashboard — 3 read-only screens
+**Files:** `dashboard/` (Next.js App Router, TS) from a shadcn dashboard block. Key files:
+`app/(dash)/api-keys/page.tsx`, `app/(dash)/history/page.tsx`, `app/(dash)/deliveries/page.tsx`,
+`lib/api.ts`, `lib/queries.ts`, `store/ui.ts`.
 
-**Files:**
-- Create: `dashboard/` (Next.js App Router, TS), from a shadcn dashboard block. Key files: `app/(dash)/api-keys/page.tsx`, `app/(dash)/history/page.tsx`, `app/(dash)/deliveries/page.tsx`, `lib/api.ts`, `lib/queries.ts`, `store/ui.ts`.
+Consumes the `otp-api` read endpoints from Task 13.
 
-**Interfaces:**
-- Consumes: `otp-api` read endpoints. **New read endpoints required in otp-api** (add to Task 13 scope if not present): `GET /v1/api-keys`, `GET /v1/otp/requests`, `GET /v1/delivery-logs` — all tenant-scoped by API key.
-
-- [ ] **Step 1:** `npx create-next-app@latest dashboard --ts --app`; `npx shadcn@latest init`; add a dashboard block; add TanStack Query provider, Zustand store, TanStack Table, RHF+Zod.
-- [ ] **Step 2:** `lib/api.ts` — a typed fetch wrapper reading `NEXT_PUBLIC_API_BASE` and the API key; `lib/queries.ts` — `useApiKeys`, `useRequests`, `useDeliveries` with `refetchInterval: 5000` on deliveries.
-- [ ] **Step 3:** Build the three pages as TanStack Table views bound to the queries; server data stays in React Query, only filters/token live in Zustand (`store/ui.ts`).
-- [ ] **Step 4:** Add a component test (Vitest + Testing Library) asserting the deliveries table renders rows from a mocked query and polls (advance timers, assert refetch).
-- [ ] **Step 5:** Run `npm test` → PASS; `npm run build` → succeeds.
-- [ ] **Step 6:** Commit `feat: next.js dashboard with three read-only screens`.
+- [ ] **Step 1:** `create-next-app` (TS, App Router); `shadcn init` + a dashboard block; add TanStack
+  Query provider, Zustand, TanStack Table, RHF+Zod.
+- [ ] **Step 2:** `lib/api.ts` - typed fetch wrapper reading `NEXT_PUBLIC_API_BASE` + the API key;
+  `lib/queries.ts` - `useApiKeys`, `useRequests`, `useDeliveries` with `refetchInterval: 5000` on
+  deliveries.
+- [ ] **Step 3:** Three TanStack Table pages bound to the queries; server data stays in React Query,
+  only filters/token live in Zustand (`store/ui.ts`).
+- [ ] **Step 4:** Component test (Vitest + Testing Library): deliveries table renders rows from a mocked
+  query and polls (advance timers, assert refetch).
+- [ ] **Step 5:** `npm test` → PASS; `npm run build` → succeeds.
+- [ ] **Step 6: Commit** `feat: next.js dashboard with three read-only screens`
 
 ---
 
@@ -1246,17 +1203,20 @@ git commit -m "feat: postgres schema and repo adapter"
 
 **Spec coverage (vs 2026-08-07-otp-mvp-scope.md):**
 - Email via Resend → Task 12. ✅
-- otp-api + dispatcher (no worker/cron) → Tasks 13, 14. ✅
-- APISIX (TLS off here / edge auth + rate limit + CORS) → Task 15. ✅
+- otp-api (Gin) + otp-dispatcher (sarama), no worker/cron → Tasks 13, 14. ✅
+- Traefik gateway (edge rate limit + CORS; auth in otp-api; TLS at Cloudflare) → Task 15. ✅
 - Kafka topics requested/sent/failed (+dlq publish, no drainer) → Tasks 11, 14. ✅
-- Redis hash+TTL, counters, cooldown, attempts → Tasks 6, 7, 10. ✅
-- Postgres tables → Task 9. ✅
+- Redis hash+TTL, counters, cooldown, attempts → Tasks 7, 8, 10. ✅
+- MySQL via GORM + golang-migrate → Task 9. ✅
 - Core domain (gen, hash-only, constant-time, 4-layer limit, attempt lock, idempotency, state) → Tasks 2–8. ✅
 - Tenant/API key seed CLI → Task 17. ✅
 - Dashboard 3 read-only screens (React Query polling, Zustand, RHF+Zod, TanStack Table) → Task 18. ✅
-- Testing: unit (Phase 1), integration testcontainers (Phase 2), e2e send→verify (Task 16), 80% domain coverage (Task 8). ✅
+- Testing: unit (Phase 1), integration testcontainers (Phase 2), e2e send→verify (Task 16), 80% coverage (Task 8). ✅
 
-**Gaps closed during review:** dashboard requires three GET read endpoints not in the original otp-api task — noted explicitly in Task 18 and must be folded into Task 13.
+**Architecture fidelity:** two independently deployable microservices, each hexagonal; domain/app import
+no infra (enforced by Task 8); services share only `pkg/contracts` + `pkg/platform`, never each other's
+`internal/`. Matches [../../reference/architecture-and-layout.md](../../reference/architecture-and-layout.md).
 
-**Type consistency:** `CodeRecord{Hash,Salt,Attempts}`, `otp.Service` method signatures, and port interfaces are used identically across Tasks 5–14.
+**Deferred (per scope):** worker/cron DLQ drainer + cleanup (fast-follow); SMS/Twilio failover, LGTM
+observability, dashboard auth, HMAC signing (Phase 2+).
 ```

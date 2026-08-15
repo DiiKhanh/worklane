@@ -1,10 +1,10 @@
-# Self-Hosted Infra Setup — Execution Runbook
+# Self-Hosted Infra Setup - Execution Runbook
 
-> **Nature of this plan:** this is **operational (ops) work**, not TDD code. Steps are shell commands run on the Ubuntu VM (or the dev machine) with an explicit **verify** after each phase. Per project convention for one-off operational work, we take the simplest direct end-to-end path — no wrappers, control planes, or custom automation. Track progress with the checkboxes.
+> **Nature of this plan:** this is **operational (ops) work**, not TDD code. Steps are shell commands run on the Ubuntu VM (or the dev machine) with an explicit **verify** after each phase. Per project convention for one-off operational work, we take the simplest direct end-to-end path - no wrappers, control planes, or custom automation. Track progress with the checkboxes.
 
-**Goal:** Serve the OTP platform's `otp-api` at `https://api.otp.<domain>` from a home k3s cluster (Ubuntu-on-VMware), and reach the VM by SSH — both through Cloudflare Tunnel, with **no router port-forwarding**.
+**Goal:** Serve the OTP platform's `otp-api` at `https://api.otp.<domain>` from a home k3s cluster (Ubuntu-on-VMware), and reach the VM by SSH - both through Cloudflare Tunnel, with **no router port-forwarding**.
 
-**Architecture:** Laptop (macOS) → VMware (NAT) → Ubuntu VM → k3s (native) → APISIX. `cloudflared` runs in the VM as a systemd service, dials out to Cloudflare, and Cloudflare routes public HTTPS + SSH back down the tunnel. Spec: [../specs/2026-08-07-self-hosted-infra-setup.md](../specs/2026-08-07-self-hosted-infra-setup.md).
+**Architecture:** Laptop (macOS) → VMware (NAT) → Ubuntu VM → k3s (native) → Traefik (k3s built-in ingress). `cloudflared` runs in the VM as a systemd service, dials out to Cloudflare, and Cloudflare routes public HTTPS + SSH back down the tunnel. Spec: [../specs/2026-08-07-self-hosted-infra-setup.md](../specs/2026-08-07-self-hosted-infra-setup.md).
 
 **Prerequisites:** a Cloudflare account; the `<domain>` registered at Tenten; sudo on the Ubuntu VM; VMware Fusion/Workstation with the Ubuntu guest running.
 
@@ -17,7 +17,7 @@
 
 ---
 
-## Phase A — Ubuntu VM baseline
+## Phase A - Ubuntu VM baseline
 
 - [ ] **A1: Set VMware networking to NAT**
 
@@ -40,7 +40,7 @@ sudo ufw allow from 127.0.0.1 to any port 22 proto tcp
 sudo ufw --force enable
 ```
 
-- [ ] **A4 — Verify:** outbound internet works from the VM.
+- [ ] **A4 - Verify:** outbound internet works from the VM.
 
 ```bash
 curl -I https://cloudflare.com && ping -c1 1.1.1.1
@@ -49,13 +49,13 @@ Expected: HTTP `200`/`301` header and a successful ping.
 
 ---
 
-## Phase B — Domain onto Cloudflare
+## Phase B - Domain onto Cloudflare
 
 - [ ] **B1:** In the Cloudflare dashboard → **Add a site** → enter `<domain>` → pick the Free plan.
 
 - [ ] **B2:** Cloudflare shows two nameservers. At **Tenten** (domain management), replace the domain's nameservers with those two.
 
-- [ ] **B3 — Verify:** the domain becomes **Active** in Cloudflare.
+- [ ] **B3 - Verify:** the domain becomes **Active** in Cloudflare.
 
 ```bash
 dig NS <domain> +short
@@ -64,7 +64,7 @@ Expected: the two `*.ns.cloudflare.com` names (propagation can take minutes to h
 
 ---
 
-## Phase C — Cloudflare Tunnel
+## Phase C - Cloudflare Tunnel
 
 - [ ] **C1: Install cloudflared (in the VM)**
 
@@ -90,7 +90,7 @@ tunnel: <UUID>
 credentials-file: /home/<user>/.cloudflared/<UUID>.json
 ingress:
   - hostname: api.otp.<domain>
-    service: http://localhost:9080     # APISIX (set in Phase D)
+    service: http://localhost:9080     # Traefik ingress (set in Phase D)
   - hostname: ssh.<domain>
     service: ssh://localhost:22
   - service: http_status:404
@@ -111,10 +111,10 @@ sudo systemctl enable --now cloudflared
 systemctl status cloudflared --no-pager
 ```
 
-- [ ] **C6 — Verify:** the tunnel is healthy and a temporary HTTP service is reachable publicly.
+- [ ] **C6 - Verify:** the tunnel is healthy and a temporary HTTP service is reachable publicly.
 
 ```bash
-# temporary local service on 9080 to prove the path before APISIX exists
+# temporary local service on 9080 to prove the path before Traefik is wired
 python3 -m http.server 9080 &   # in the VM
 cloudflared tunnel info otp-home
 ```
@@ -122,12 +122,12 @@ From the dev machine: `curl -I https://api.otp.<domain>` → expect `200`. Stop 
 
 ---
 
-## Phase D — k3s + APISIX
+## Phase D - k3s + Traefik (built-in ingress)
 
-- [ ] **D1: Install k3s with Traefik disabled (APISIX is our ingress)**
+- [ ] **D1: Install k3s with defaults (keep the bundled Traefik)**
 
 ```bash
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
+curl -sfL https://get.k3s.io | sh -   # no --disable traefik: we keep it as the ingress
 sudo k3s kubectl get nodes
 ```
 
@@ -140,36 +140,32 @@ sudo chown $(id -u):$(id -g) ~/.kube/config
 kubectl get nodes    # after installing kubectl, or use: k3s kubectl
 ```
 
-- [ ] **D3: Install APISIX via Helm**
+- [ ] **D3: Confirm Traefik is running (nothing to install)**
 
 ```bash
-helm repo add apisix https://charts.apiseven.com
-helm repo update
-kubectl create namespace apisix
-helm install apisix apisix/apisix -n apisix \
-  --set service.type=NodePort \
-  --set service.http.nodePort=30980
+kubectl -n kube-system get pods | grep traefik      # Traefik pod should be Running
+kubectl -n kube-system get svc traefik              # k3s servicelb exposes it on 80/443
 ```
 
-- [ ] **D4: Point the tunnel at APISIX**
+- [ ] **D4: Point the tunnel at Traefik**
 
-Update `~/.cloudflared/config.yml` `api.otp.<domain>` service to the APISIX address reachable from the host (e.g. `http://localhost:30980` if the NodePort is bound, or the APISIX ClusterIP via a `kubectl port-forward` for the MVP). Restart:
+Update `~/.cloudflared/config.yml` `api.otp.<domain>` service to the Traefik address reachable from the host. Simplest for the MVP: `kubectl -n kube-system port-forward svc/traefik 9080:80` and keep the config's `http://localhost:9080`. (Later you can point straight at the node's `:80`.) Restart:
 
 ```bash
 sudo systemctl restart cloudflared
 ```
 
-- [ ] **D5 — Verify:** a hello route through APISIX answers publicly.
+- [ ] **D5 - Verify:** a hello route through Traefik answers publicly.
 
-Create a test APISIX route to any upstream (or the OTP `otp-api` service once deployed), then from the dev machine:
+Create a test `Ingress` (or Traefik `IngressRoute`) to any upstream - or the OTP `otp-api` Service once deployed - then from the dev machine:
 ```bash
-curl -i https://api.otp.<domain>/v1/otp/send   # expect 401 from APISIX key-auth (no key)
+curl -i https://api.otp.<domain>/v1/otp/send   # expect 401 from otp-api (no API key)
 ```
-Expected: a response **from APISIX** (401 without an API key proves the full path Cloudflare→tunnel→APISIX works).
+Expected: a response routed **through Traefik** to the service. (Once `otp-api` is deployed, a 401 without an API key proves the full path Cloudflare→tunnel→Traefik→otp-api works; API-key auth lives in `otp-api`, not the gateway.)
 
 ---
 
-## Phase E — SSH over the tunnel
+## Phase E - SSH over the tunnel
 
 - [ ] **E1: Install cloudflared on the dev machine (macOS)**
 
@@ -187,7 +183,7 @@ Host otp-home
   ProxyCommand cloudflared access ssh --hostname %h
 ```
 
-- [ ] **E3 — Verify:** SSH in with no router port-forward.
+- [ ] **E3 - Verify:** SSH in with no router port-forward.
 
 ```bash
 ssh otp-home
@@ -196,20 +192,20 @@ Expected: a shell on the Ubuntu VM, reached entirely through Cloudflare.
 
 ---
 
-## Phase F — Deploy the OTP stack (hand-off to the product plan)
+## Phase F - Deploy the OTP stack (hand-off to the product plan)
 
-- [ ] **F1:** Deploy `otp-api` + `dispatcher` to k3s via **Kustomize** (`manifest/deploy/kustomize/base` + `develop` overlay), with Redis/MySQL/Kafka provided by their well-known charts or operators. This is the deploy step referenced by the product plan; do it only after the product's docker-compose e2e is green. (APISIX itself is installed via its Helm chart in Phase D — a third-party dependency, distinct from our services' Kustomize manifests.)
-- [ ] **F2 — Verify:** the full success criteria from the MVP scope doc §5 hold against `https://api.otp.<domain>`.
+- [ ] **F1:** Deploy `otp-api` + `dispatcher` to k3s via **Kustomize** (`deploy/kustomize/base` + `develop` overlay), with Redis/MySQL/Kafka provided by their well-known charts or operators, and a Traefik `Ingress`/`IngressRoute` routing `api.otp.<domain>` to `otp-api`. This is the deploy step referenced by the product plan; do it only after the product's docker-compose e2e is green. (Traefik needs no separate install - it ships with k3s, kept from Phase D.)
+- [ ] **F2 - Verify:** the full success criteria from the MVP scope doc §5 hold against `https://api.otp.<domain>`.
 
 ---
 
 ## Fixing the current broken SSH
 
-Today SSH "works but not correctly." Do **not** patch the old setup — rebuild via Phases A–E. If SSH still fails at **E3**, capture the real symptom before changing anything:
+Today SSH "works but not correctly." Do **not** patch the old setup - rebuild via Phases A–E. If SSH still fails at **E3**, capture the real symptom before changing anything:
 
-- [ ] On the dev machine: `ssh -v otp-home 2>&1 | head -40` — does `cloudflared access` connect, or does DNS/hostname fail?
-- [ ] In the VM: `journalctl -u cloudflared -n 100 --no-pager` — is the tunnel healthy, is the `ssh.<domain>` ingress rule present?
-- [ ] In the VM: `sudo systemctl status ssh` and `sudo ss -tlnp | grep :22` — is `sshd` listening on localhost.
+- [ ] On the dev machine: `ssh -v otp-home 2>&1 | head -40` - does `cloudflared access` connect, or does DNS/hostname fail?
+- [ ] In the VM: `journalctl -u cloudflared -n 100 --no-pager` - is the tunnel healthy, is the `ssh.<domain>` ingress rule present?
+- [ ] In the VM: `sudo systemctl status ssh` and `sudo ss -tlnp | grep :22` - is `sshd` listening on localhost.
 - [ ] In Cloudflare: is `ssh.<domain>` a CNAME to the tunnel, and is there a matching **Cloudflare Access** app if Access is enforced.
 
 Match the symptom to the phase that owns it (DNS→B, tunnel/ingress→C, sshd→A/E) and fix only that.
@@ -222,12 +218,12 @@ Match the symptom to the phase that owns it (DNS→B, tunnel/ingress→C, sshd�
 - Ubuntu-on-VMware NAT baseline → Phase A. ✅
 - Tenten domain onto Cloudflare NS → Phase B. ✅
 - Cloudflare Tunnel (outbound, systemd, ingress for api + ssh) → Phase C. ✅
-- k3s with Traefik disabled + APISIX ingress → Phase D. ✅
+- k3s with its built-in Traefik ingress (kept, not disabled) → Phase D. ✅
 - SSH over tunnel via `cloudflared access` → Phase E. ✅
 - Deploy hand-off + success criteria → Phase F. ✅
 - Current-blocker diagnosis → dedicated section. ✅
 
 **Placeholder scan:** `<domain>`, `<UUID>`, `<user>`, `<vm-user>` are intentional per-environment values, each explained. No unresolved TODOs.
 
-**Consistency:** hostnames (`api.otp.<domain>`, `ssh.<domain>`) and the tunnel name `otp-home` are used identically across phases. The tunnel's `api.otp` upstream is intentionally staged: a temporary `:9080` service in Phase C proves the path, then D4 repoints it to the APISIX NodePort `:30980`.
+**Consistency:** hostnames (`api.otp.<domain>`, `ssh.<domain>`) and the tunnel name `otp-home` are used identically across phases. The tunnel's `api.otp` upstream is intentionally staged: a temporary `:9080` service in Phase C proves the path, then D4 repoints it to Traefik (a `port-forward` to `svc/traefik` on `:9080` for the MVP).
 ```

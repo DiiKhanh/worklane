@@ -1,4 +1,4 @@
-# OTP Verification Platform — Design Spec
+# OTP Verification Platform - Design Spec
 
 - **Date:** 2026-08-06
 - **Status:** Draft (approved for planning)
@@ -13,9 +13,13 @@ client applications **send** and **verify** one-time passwords (OTP) over **emai
 This is a real, deployed product running on the author's own domain. It serves a dual goal:
 
 1. **A working product** usable via API + a developer dashboard.
-2. **A CV showcase** that intentionally mirrors the author's target production stack
-   (GoFrame microservices, MySQL, APISIX gateway, Kafka event-driven via sarama, Redis, workers,
-   k8s), so the author can speak about it confidently in interviews.
+2. **A CV showcase** that intentionally mirrors the author's target production **architecture**
+   (microservices, MySQL, an edge gateway, Kafka event-driven via sarama, Redis, workers, k8s), so
+   the author can speak about it confidently in interviews. Two implementation tools are swapped for
+   beginner-friendliness: **Gin** in place of production's GoFrame framework, and **Traefik** in place
+   of APISIX. The distributed design is mirrored faithfully; only these two libraries differ - see
+   [architecture-and-layout.md](../../reference/architecture-and-layout.md) for the full mapping and
+   the repository layout.
 
 Scope is deliberately narrow (**OTP first**) but the architecture is designed to be **extended
 later** to other channels (push, in-app) and other notification types without a rewrite.
@@ -31,7 +35,7 @@ later** to other channels (push, in-app) and other notification types without a 
 
 - A client can obtain an API key, call `POST /v1/otp/send`, receive a real email/SMS with a code,
   then call `POST /v1/otp/verify` and get a correct accept/reject result.
-- The full path runs as **separate microservices** behind **APISIX**, communicating through
+- The full path runs as **separate microservices** behind **Traefik**, communicating through
   **Kafka**, deployed to a **k3s** cluster reachable on the author's domain over HTTPS.
 - Core domain logic (OTP generation, verification, rate limiting) has unit tests; infra
   integration and the end-to-end send→verify flow are covered by tests. Target **80%** coverage.
@@ -40,13 +44,14 @@ later** to other channels (push, in-app) and other notification types without a 
 ## 3. Architecture Overview
 
 ```
-Client ──HTTPS──► APISIX (edge gateway)
-                    │   • TLS termination
-                    │   • API-key authentication
-                    │   • edge rate limiting
+Client ──HTTPS──► Traefik (edge gateway)
+                    │   • routing to otp-api
+                    │   • edge rate limiting (middleware)
+                    │   • CORS (middleware)
+                    │   (TLS is terminated upstream at Cloudflare; API-key auth is done in otp-api)
                     │
                     ▼
-                 otp-api  (GoFrame HTTP service)
+                 otp-api  (Gin HTTP service)
                     │   • validate request
                     │   • business rate limiting (per recipient / per tenant / cooldown)
                     │   • generate OTP, store HASH + TTL in Redis
@@ -56,14 +61,14 @@ Client ──HTTPS──► APISIX (edge gateway)
         Kafka topics: otp.requested / otp.sent / otp.failed / otp.dlq
                     │
                     ▼
-                dispatcher  (GoFrame, Kafka consumer via sarama)
+                dispatcher  (Gin-stack service, Kafka consumer via sarama)
                     │   • render message from template
                     │   • select provider (email / SMS) via Provider abstraction
                     │   • send; on failure → retry / failover / DLQ
                     │   • write delivery_logs (MySQL)
                     │   • publish otp.sent / otp.failed
                     │
-                worker / cron  (GoFrame)
+                worker / cron  (Go service)
                         • drain otp.dlq with backoff retry
                         • scheduled cleanup of expired OTP + stale audit rows
 
@@ -74,10 +79,10 @@ Dashboard (Next.js + shadcn/ui) ──► otp-api REST (delivery-logs, api-keys)
 
 | Component    | Type                     | Responsibility |
 |--------------|--------------------------|----------------|
-| **APISIX**   | Gateway                  | TLS, API-key auth plugin, coarse edge rate limiting, routing to `otp-api`. |
-| **otp-api**  | GoFrame HTTP service     | The synchronous request path: validation, business rate limiting, OTP generation + storage, verification, publishing events, serving read APIs for the dashboard. |
-| **dispatcher** | GoFrame Kafka consumer (sarama) | The asynchronous delivery path: templating, provider selection, sending, retry/failover, delivery logging. |
-| **worker/cron** | GoFrame              | Background reliability: DLQ draining with backoff, scheduled cleanup jobs. |
+| **Traefik**  | Gateway                  | Routing to `otp-api`, coarse edge rate limiting + CORS (middlewares). TLS is terminated upstream at Cloudflare; API-key auth is enforced in `otp-api`. k3s ships Traefik as its default ingress. |
+| **otp-api**  | Gin HTTP microservice    | The synchronous request path: validation, API-key auth, business rate limiting, OTP generation + storage, verification, publishing events, serving read APIs for the dashboard. |
+| **dispatcher** | Kafka-consumer microservice (sarama) | The asynchronous delivery path: templating, provider selection, sending, retry/failover, delivery logging. |
+| **worker/cron** | Go microservice      | Background reliability: DLQ draining with backoff, scheduled cleanup jobs. |
 
 Keeping the **synchronous request path** (`otp-api`) separate from the **asynchronous delivery
 path** (`dispatcher`) is the core architectural decision: the API stays fast and available even
@@ -90,10 +95,10 @@ when a downstream provider is slow or failing, and delivery becomes independentl
   The plaintext code is never persisted anywhere.
 - **Verification:** constant-time comparison of the submitted code's hash against the stored hash.
 - **Rate limiting (multi-layer):**
-  - per recipient (address/phone) — max sends per rolling window,
-  - per API key / tenant — global quota,
-  - **resend cooldown** — minimum interval between two sends to the same recipient,
-  - **verify-attempt limit** — lock verification after N wrong attempts (anti brute-force).
+  - per recipient (address/phone) - max sends per rolling window,
+  - per API key / tenant - global quota,
+  - **resend cooldown** - minimum interval between two sends to the same recipient,
+  - **verify-attempt limit** - lock verification after N wrong attempts (anti brute-force).
 - **Idempotency:** an `Idempotency-Key` header on send collapses duplicate requests.
 - **State model:** `requested → sent | failed`, then `verified | expired`. All transitions are
   recorded for audit.
@@ -126,13 +131,17 @@ must be implemented for real, not mocked.
 
 ### MySQL (source of truth / audit)
 
-Accessed via GoFrame `gf gen dao` DAOs (`dao` / `model/do` / `model/entity`).
+Accessed via **GORM** (`gorm.io/gorm`) behind a `Repo` port; schema changes ship as explicit SQL
+migrations (`golang-migrate`, under `db/otp/migrations`) rather than `AutoMigrate`. GORM is the
+beginner-friendly analogue of production's `gf gen dao` data layer; being behind the `Repo` port, it
+is swappable later (e.g. to sqlc). See
+[architecture-and-layout.md](../../reference/architecture-and-layout.md) §8.
 
-- `tenants` — owning account of an API key.
-- `api_keys` — hashed key, tenant, scopes, status.
-- `otp_requests` — audit of every send request (recipient hashed/masked, channel, state, timestamps).
-- `delivery_logs` — per-attempt provider results (provider, status, latency, error).
-- `templates` — message templates per channel/locale.
+- `tenants` - owning account of an API key.
+- `api_keys` - hashed key, tenant, scopes, status.
+- `otp_requests` - audit of every send request (recipient hashed/masked, channel, state, timestamps).
+- `delivery_logs` - per-attempt provider results (provider, status, latency, error).
+- `templates` - message templates per channel/locale.
 
 ### Redis (hot state, TTL-bound)
 
@@ -148,9 +157,11 @@ Accessed via GoFrame `gf gen dao` DAOs (`dao` / `model/do` / `model/entity`).
 
 ## 7. Security
 
-- **API-key auth** at APISIX + revalidated in `otp-api`; keys stored hashed, never in plaintext.
+- **API-key auth** enforced in `otp-api` (Gin middleware); keys stored hashed, never in plaintext.
+  (Traefik has no built-in key-auth plugin like APISIX, so auth lives in the service - which also
+  keeps the logic visible and testable.)
 - Request signing via HMAC for sensitive endpoints (optional, Phase 2).
-- **TLS everywhere** (edge termination at APISIX).
+- **TLS everywhere** (edge termination at Cloudflare, in front of Traefik).
 - OTP codes stored only as hashes; constant-time verification.
 - Rate limiting at both edge (coarse) and application (fine, business rules).
 - Recipient PII (phone/email) masked in logs and audit output.
@@ -168,14 +179,14 @@ layout, sidebar, and table scaffolding comes ready-made.
 |---------|--------|-----|
 | Framework | **Next.js (App Router, TypeScript)** | Fast scaffolding, file-based routing, large ecosystem; can start as a pure SPA-style client and add SSR later without a rewrite. |
 | UI components | **shadcn/ui** (Radix + Tailwind) | Copy-in components the project *owns* (no runtime UI-lib lock-in), accessible by default; the ready **blocks** template removes most boilerplate. |
-| Server state | **TanStack Query (React Query)** | Caching, request dedup, retries, and **`refetchInterval` polling** — a natural fit for live delivery-log status without building WebSockets. |
+| Server state | **TanStack Query (React Query)** | Caching, request dedup, retries, and **`refetchInterval` polling** - a natural fit for live delivery-log status without building WebSockets. |
 | Client/UI state | **Zustand** | Lightweight store for UI-only state (filters, selected tenant, modal state, in-memory API token) with no Redux boilerplate. |
 | Forms & validation | **React Hook Form + Zod** | Minimal re-renders, schema-first validation shared with types (create API key, filter forms). |
 | Data tables | **TanStack Table** | Headless sorting/filtering/pagination for OTP history and delivery-logs; pairs cleanly with React Query. |
 
 **Key separation of concerns:** server data (delivery-logs, api-keys, OTP history) lives **only** in
 React Query's cache; Zustand holds **only** client/UI state. Do not copy fetched server data into
-Zustand — that duplicates the source of truth and causes stale-state bugs. This split is the single
+Zustand - that duplicates the source of truth and causes stale-state bugs. This split is the single
 most important frontend design rule here.
 
 ### Responsibilities
@@ -203,7 +214,7 @@ flowchart LR
 ## 9. Observability (Phase 2)
 
 - Instrument all services with **OpenTelemetry** (traces + metrics).
-- Backend: **LGTM stack** — **L**oki (logs), **G**rafana (dashboards), **T**empo (traces),
+- Backend: **LGTM stack** - **L**oki (logs), **G**rafana (dashboards), **T**empo (traces),
   **M**imir (metrics).
 - Goal: trace a single send→verify request across `otp-api` → Kafka → `dispatcher` → provider.
 
@@ -213,14 +224,14 @@ flowchart LR
   author's domain over HTTPS.
 - **Packaging:** **Kustomize** per service (`manifest/deploy/kustomize/base` + `overlays/<env>`),
   mirroring the production convention; Kafka/Redis/MySQL via well-known charts or operators.
-- **CI/CD:** GitHub Actions — build & push images → deploy to k3s. **ArgoCD / GitOps** is a Phase 3
+- **CI/CD:** GitHub Actions - build & push images → deploy to k3s. **ArgoCD / GitOps** is a Phase 3
   enhancement.
 
 ## 11. Testing Strategy
 
 - **Unit:** OTP generation/verification, rate-limit logic, provider selection/failover logic.
 - **Integration:** Redis / MySQL / Kafka behavior via **testcontainers**.
-- **End-to-end:** full `send → verify` flow exercised through APISIX against running services.
+- **End-to-end:** full `send → verify` flow exercised through Traefik against running services.
 - **Coverage target:** 80% (per project standards), with TDD (test-first) for domain logic.
 
 ## 12. Exploration / Learning Track (out of product scope)
@@ -232,8 +243,8 @@ flowchart LR
 
 ## 13. Phased Delivery
 
-- **Phase 1 — MVP (deployable):** `otp-api` + `dispatcher` + `worker/cron`, real email + one real
-  SMS provider, Redis + MySQL + Kafka, APISIX, k3s deploy, dashboard wired to read APIs.
+- **Phase 1 - MVP (deployable):** `otp-api` + `dispatcher` + `worker/cron`, real email + one real
+  SMS provider, Redis + MySQL + Kafka, Traefik, k3s deploy, dashboard wired to read APIs.
 - **Phase 2:** multi-provider **failover** (Twilio), **LGTM observability**, retry/DLQ hardening,
   optional HMAC request signing.
 - **Phase 3:** additional channels (push / in-app), **ArgoCD/GitOps**, autoscaling; floci learning
@@ -243,7 +254,7 @@ flowchart LR
 
 1. ~~Exact location + auth model of the existing dashboard source.~~ **Resolved:** the existing Vue
    admin is not reused; the dashboard is a new Next.js app (see §8). Dashboard **login/auth** is
-   deferred — MVP operates against the `otp-api` read APIs with an in-memory API token; a full auth
+   deferred - MVP operates against the `otp-api` read APIs with an in-memory API token; a full auth
    model (e.g. NextAuth/Auth.js) is a Phase 2 decision.
 2. Chosen VN SMS provider for Phase 1 primary (eSMS vs SpeedSMS) and email backend (SMTP vs Resend).
 3. VPS provider/region for the k3s host.

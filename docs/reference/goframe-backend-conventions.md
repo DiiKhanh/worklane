@@ -1,10 +1,18 @@
 # GoFrame Backend Conventions (reference)
 
 - **Date:** 2026-08-07
-- **Type:** Reference — conventions from the author's work backend, mirrored in this side project
+- **Type:** Reference - conventions from the author's work backend, mirrored in this side project
 - **Source:** a private internal backend (local checkout only; not part of this repo, not linked here)
 
-> Purpose: the OTP side project intentionally mirrors the author's real production "muscle memory" so it doubles as interview material. This doc records the **architecture, layout, and conventions only** — no proprietary business logic, no internal names, URLs, or paths.
+> Purpose: the OTP side project intentionally mirrors the author's real production "muscle memory" so it doubles as interview material. This doc records the **architecture, layout, and conventions only** - no proprietary business logic, no internal names, URLs, or paths.
+
+> **Scope note (read first):** this document describes the **production** stack (GoFrame v2). The
+> side project itself is now built with **Gin + hexagonal (ports & adapters)** instead of GoFrame,
+> because the author is new to Go and wants the architecture *visible* rather than hidden behind
+> codegen. This file stays as the **production reference** the project learns from; the concept-by-concept
+> mapping (GoFrame → Gin) and the actual repo layout live in
+> [architecture-and-layout.md](./architecture-and-layout.md). Everything below still holds as a description
+> of production - only the side project's *implementation tools* differ.
 
 ## 1. Stack (actual)
 
@@ -22,7 +30,7 @@
 | CI | **GitLab CI** (`.gitlab-ci.yml`) |
 | Shared code | an internal shared Go module: `kafka`, `common/middleware`, `metrics`, dao helpers, `protobuf`, `translation` |
 
-The side project's earlier assumption of go-zero + Postgres + APISIX was **replaced** by this stack (kept: Kafka, Redis, k3s, Cloudflare).
+This table describes **production**. The side project mirrors production's *architecture* (MySQL, Redis, Kafka-via-sarama, Kustomize, k3s, Cloudflare) but swaps two implementation tools for beginner-friendliness: **Gin** in place of the GoFrame framework, and **Traefik** in place of APISIX. See [architecture-and-layout.md](./architecture-and-layout.md) §8 for the full mapping. (An even earlier draft had assumed go-zero + Postgres; that was dropped entirely.)
 
 ## 2. Service layout (GoFrame, per service)
 
@@ -47,14 +55,14 @@ resource/                     # static resources, i18n
 main.go                       # blank-imports boot/logic/packed, runs cmd.Main
 ```
 
-**The layered dependency direction:** `controller → service (interface) ← logic (impl)`. Controllers depend on the **interface** in `internal/service`, never on `logic` directly. This is GoFrame's take on dependency inversion — the same spirit as ports & adapters, just codegen-driven.
+**The layered dependency direction:** `controller → service (interface) ← logic (impl)`. Controllers depend on the **interface** in `internal/service`, never on `logic` directly. This is GoFrame's take on dependency inversion - the same spirit as ports & adapters, just codegen-driven.
 
 ## 3. Interface + registry pattern
 
 `internal/service/<x>.go` is **generated** and holds only the interface:
 
 ```go
-// generated — DO NOT EDIT
+// generated - DO NOT EDIT
 type IOTP interface {
     SendMessageCreateTask(ctx context.Context, in model.MsgKafkaCreateTaskSendOTP) error
     SendMessageUpdateFromProvider(ctx context.Context, in model.KafkaMsgUpdateTaskCallbackMessage) error
@@ -105,7 +113,7 @@ sequenceDiagram
 
 Notable production details (mirror selectively, most are beyond MVP):
 - **Multi-provider** with per-provider webhook handlers (several SMS vendors).
-- **Delivery status via provider webhooks** (push), not polling — plus a **backfill** path for reconciliation.
+- **Delivery status via provider webhooks** (push), not polling - plus a **backfill** path for reconciliation.
 - **Sharded audit tables** per company/date (`otp_<cid>_task_info_<yyyymmdd>`), existence cached in Redis.
 - **OTP statistics in Elasticsearch**, aggregated for reporting.
 - **Short links**: a separate url-shortener service embeds tracked short URLs in messages (out of OTP MVP scope).
@@ -122,9 +130,9 @@ Notable production details (mirror selectively, most are beyond MVP):
 | Mirror (for CV authenticity) | Simplify for MVP |
 |------------------------------|------------------|
 | GoFrame v2 layout (api/controller/logic/service/dao/model/consts/config/cmd) | Single api service + one dispatcher (no create-task/delay-queue split) |
-| MySQL + `gf` DAO/entity codegen | No per-company/date sharded tables — one `otp_requests` table |
+| MySQL + `gf` DAO/entity codegen | No per-company/date sharded tables - one `otp_requests` table |
 | Kafka via sarama with typed envelope + config-driven topics | Fewer topics: `otp.requested`/`otp.sent`/`otp.failed` |
-| Redis typed key builders + service wrapper | — |
+| Redis typed key builders + service wrapper | - |
 | Kustomize deploy (base + overlays) | Single `develop` overlay on k3s |
 | Separate auth concept | Seed CLI issues API keys; no live auth service |
 | Provider abstraction + webhooks | Email-only (Resend); polling for status first, webhooks later |
@@ -132,7 +140,7 @@ Notable production details (mirror selectively, most are beyond MVP):
 
 ## 8. Codegen & tooling
 
-- `gf gen service` regenerates `internal/service/*.go` from `logic` — never hand-edit those files.
+- `gf gen service` regenerates `internal/service/*.go` from `logic` - never hand-edit those files.
 - `gf gen dao` generates `dao/`, `model/do/`, `model/entity/` from the MySQL schema.
 - `hack/config.yaml` + `hack/hack.mk` drive the generators.
 - `main.go` blank-imports `internal/boot`, `internal/logic`, `internal/packed` and the mysql/redis drivers, then runs `cmd.Main`.
