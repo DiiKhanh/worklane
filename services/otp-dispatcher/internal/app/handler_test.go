@@ -48,7 +48,7 @@ func newHandler(mail EmailProvider) (*Handler, *fakeRepo, *fakePub) {
 	repo := newFakeRepo()
 	pub := &fakePub{}
 	h := NewHandler(Deps{Mail: mail, Repo: repo, Pub: pub, Clock: fixedClock{t: time.Unix(0, 0)}}, Config{
-		SentTopic: "otp.sent", FailedTopic: "otp.failed", DLQTopic: "otp.dlq",
+		SentTopic: "otp.sent", FailedTopic: "otp.failed", DLQTopic: "otp.dlq", ProviderName: "smtp",
 		Template: Template{Subject: "Code", BodyFmt: "Your code is %s"},
 	})
 	return h, repo, pub
@@ -68,6 +68,9 @@ func TestHandle_Success(t *testing.T) {
 	}
 	if len(repo.logs) != 1 || repo.logs[0].Status != "sent" {
 		t.Fatalf("expected one sent delivery log, got %+v", repo.logs)
+	}
+	if repo.logs[0].Provider != "smtp" {
+		t.Fatalf("delivery log must record the configured provider, got %q", repo.logs[0].Provider)
 	}
 	if len(pub.topics) != 1 || pub.topics[0] != "otp.sent" {
 		t.Fatalf("expected publish to otp.sent, got %v", pub.topics)

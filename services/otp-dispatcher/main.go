@@ -51,7 +51,8 @@ func main() {
 	// Provider is chosen by config: SMTP (MailHog) for local/e2e, Resend for production.
 	// Both satisfy app.EmailProvider, so nothing downstream changes.
 	var mail app.EmailProvider
-	switch config.Env("EMAIL_PROVIDER", "resend") {
+	providerLabel := config.Env("EMAIL_PROVIDER", "resend")
+	switch providerLabel {
 	case "smtp":
 		mail = smtpmail.New(
 			config.Env("SMTP_HOST", "mailhog"), config.EnvInt("SMTP_PORT", 1025),
@@ -67,9 +68,10 @@ func main() {
 	handler := app.NewHandler(app.Deps{
 		Mail: mail, Repo: repo, Pub: prod, Clock: realClock{},
 	}, app.Config{
-		SentTopic:   config.Env("KAFKA_TOPIC_SENT", "otp.sent"),
-		FailedTopic: config.Env("KAFKA_TOPIC_FAILED", "otp.failed"),
-		DLQTopic:    config.Env("KAFKA_TOPIC_DLQ", "otp.dlq"),
+		SentTopic:    config.Env("KAFKA_TOPIC_SENT", "otp.sent"),
+		FailedTopic:  config.Env("KAFKA_TOPIC_FAILED", "otp.failed"),
+		DLQTopic:     config.Env("KAFKA_TOPIC_DLQ", "otp.dlq"),
+		ProviderName: providerLabel,
 		Template: app.Template{
 			Subject: config.Env("OTP_EMAIL_SUBJECT", "Your verification code"),
 			BodyFmt: config.Env("OTP_EMAIL_BODY", "Your verification code is %s. It expires in 5 minutes."),

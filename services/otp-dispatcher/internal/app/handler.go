@@ -6,14 +6,13 @@ import (
 	contracts "github.com/duykhanh/worklane/pkg/contracts/otp"
 )
 
-const providerName = "resend"
-
-// Config holds the topics and email template for the dispatch handler.
+// Config holds the topics, provider label, and email template for the dispatch handler.
 type Config struct {
-	SentTopic   string
-	FailedTopic string
-	DLQTopic    string
-	Template    Template
+	SentTopic    string
+	FailedTopic  string
+	DLQTopic     string
+	ProviderName string // recorded on delivery logs (e.g. "resend", "smtp")
+	Template     Template
 }
 
 // Deps bundles the ports the handler depends on.
@@ -45,7 +44,7 @@ func (h *Handler) Handle(ctx context.Context, evt contracts.RequestedEvent) erro
 
 	if sendErr != nil {
 		if err := h.d.Repo.InsertDeliveryLog(ctx, DeliveryLog{
-			RequestID: evt.RequestID, TenantID: evt.TenantID, Provider: providerName,
+			RequestID: evt.RequestID, TenantID: evt.TenantID, Provider: h.cfg.ProviderName,
 			Status: contracts.StateFailed, LatencyMillis: latency, Error: sendErr.Error(),
 		}); err != nil {
 			return err
@@ -63,7 +62,7 @@ func (h *Handler) Handle(ctx context.Context, evt contracts.RequestedEvent) erro
 	}
 
 	if err := h.d.Repo.InsertDeliveryLog(ctx, DeliveryLog{
-		RequestID: evt.RequestID, TenantID: evt.TenantID, Provider: providerName,
+		RequestID: evt.RequestID, TenantID: evt.TenantID, Provider: h.cfg.ProviderName,
 		Status: contracts.StateSent, LatencyMillis: latency, Error: "",
 	}); err != nil {
 		return err
