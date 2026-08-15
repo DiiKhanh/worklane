@@ -216,3 +216,54 @@ code; every entry points at a real file.
 - Injecting `baseURL` and the `*http.Client` is dependency injection again - the same trick that made
   the domain testable, applied to an outbound HTTP call.
 
+---
+
+## Phase 3 - services (Gin + the composition root)
+
+### 21. The inbound port is defined where it is used (`http/handlers.go`)
+
+- The HTTP adapter declares `type OTPService interface { Send...; Verify... }` and depends on *that*,
+  not on the concrete `*app.Service`. In `main.go` we pass the real service; in tests we pass a
+  `fakeSvc`. Same inversion as the outbound ports, now on the driving side.
+- This is why the handler test needs no Redis/DB/Kafka at all - it swaps the whole use case for a fake
+  and checks only the HTTP translation (status codes, JSON shape).
+
+### 22. Gin middleware and request-scoped context (`http/middleware.go`)
+
+- A middleware is a function run before the handler. `apiKeyAuth` reads the `Authorization` header,
+  hashes the key, looks up the tenant, and either `c.AbortWithStatusJSON(401, ...)` (stop here) or
+  `c.Set("tenant_id", ...)` + `c.Next()` (continue). Handlers later read `c.GetString("tenant_id")`.
+- Passing the tenant via the request context (not a global) keeps each request isolated - vital when
+  many requests run concurrently. We do auth in the service, not the gateway, because Traefik has no
+  key-auth plugin; bonus: the logic is visible and unit-tested.
+
+### 23. One place maps errors to HTTP status (`http/errors.go`)
+
+- `statusFor(err)` is the single switch translating domain sentinels to codes: rate/cooldown/attempts
+  -> 429, mismatch -> 401, not-found/expired -> 410, anything else -> 500. Handlers just call
+  `writeError(c, err)`.
+- Centralizing this means the use cases stay transport-ignorant (they return `domain.ErrRateLimited`,
+  not `429`) and there is exactly one place to audit the mapping. Note we scrub the message on 500 so
+  an unexpected internal error never leaks its detail to the client.
+
+### 24. The composition root (`services/*/main.go`)
+
+- This is the only file that imports concrete adapters *and* the app together. It reads config, opens
+  MySQL/Redis/Kafka, constructs the adapters, injects them into `app.New(...)`, and starts the server.
+  Everywhere else depends on interfaces; here we finally pick the real implementations.
+- Because wiring lives in one auditable place, you can read `main.go` top-to-bottom and see the whole
+  system's shape. No hidden globals, no service locator.
+- **Graceful shutdown:** we run the server in a goroutine and block on an OS signal (`SIGINT`/`SIGTERM`).
+  On signal, `srv.Shutdown(ctx)` stops accepting new requests and lets in-flight ones finish within a
+  timeout. This is standard for a production service - a hard `os.Exit` would cut active requests.
+
+### 25. Two services, two repos - on purpose
+
+- `otp-dispatcher` has its *own* `mysqlrepo` (just `InsertDeliveryLog` + `UpdateState`), separate from
+  otp-api's. They cannot share it: Go's `internal/` rule forbids one service importing another's
+  internals, and that is exactly the microservice boundary we want.
+- The small duplication (a row struct, a `TableName`) is the price of independence. What they *do*
+  share is the database schema (one set of migrations) and the Kafka event contract - the two seams
+  that are meant to be shared. This is the pragmatic "shared database" MVP simplification; a stricter
+  design would give each service its own tables.
+
