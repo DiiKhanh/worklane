@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS templates;
+DROP TABLE IF EXISTS delivery_logs;
+DROP TABLE IF EXISTS otp_requests;
+DROP TABLE IF EXISTS api_keys;
+DROP TABLE IF EXISTS tenants;
