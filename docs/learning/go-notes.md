@@ -141,3 +141,78 @@ code; every entry points at a real file.
   proves little; the point is that the *rules* (limits, lock, idempotency, transitions) are all
   exercised.
 
+---
+
+## Phase 2 - adapters (talking to real infrastructure)
+
+### 14. Build tags: separating fast unit tests from slow integration tests
+
+- The first line `//go:build integration` (with a blank line after) is a **build constraint**. Files
+  with it compile *only* when you pass `-tags=integration`. So `go test ./...` (what CI runs on every
+  save) stays fast and needs no Docker; `go test -tags=integration ./...` runs the heavy ones.
+- Why: adapter tests spin up real MySQL/Redis/Kafka - each takes seconds. You do not want that on
+  every keystroke, but you *do* want it before merging. Tags give you both.
+
+### 15. testcontainers: real infrastructure, disposable, per-test
+
+- Instead of mocking Redis/MySQL/Kafka (which proves nothing about real SQL/commands), we boot the
+  **actual** service in a throwaway Docker container, run the adapter against it, then destroy it.
+- `tcmysql.Run(ctx, "mysql:8.0", ...)` starts a container; `ctr.ConnectionString(ctx, ...)` gives a
+  DSN; `t.Cleanup(func(){ ctr.Terminate(ctx) })` guarantees teardown even if the test fails.
+- This is the honest way to test an adapter: it catches real bugs (wrong column name, a Redis command
+  that behaves unexpectedly, a migration that will not apply) that a mock would hide.
+
+### 16. Structural typing proves an adapter satisfies a port - at compile time
+
+- `var _ app.Repo = (*mysqlrepo.Repo)(nil)` is a throwaway variable whose only job is to make the
+  compiler check that `*Repo` implements `app.Repo`. If a method is missing or has the wrong
+  signature, the build fails - you find out immediately, not at runtime.
+- Note the adapter never says `implements app.Repo`. Go has no such keyword: having the right methods
+  *is* implementing the interface. The `var _ =` line is how you assert that on purpose.
+- The Kafka `Producer` is a neat case: it lives in `pkg/` and cannot import `app` (the `internal/`
+  rule forbids it), yet it still satisfies `app.Publisher` just by having a matching `Publish` method.
+  Structural typing lets a shared library satisfy a service-private interface without any coupling.
+
+### 17. GORM basics and why migrations, not AutoMigrate
+
+- A GORM "model" is a struct whose fields map to columns; `func (T) TableName() string` pins the
+  table name. `db.WithContext(ctx).Create(&row)` / `.Where(...).First(&row)` / `.Model(...).Update(...)`
+  are the CRUD verbs. GORM builds parameterized SQL, so no SQL-injection risk from `?` placeholders.
+- We keep these row structs **private** to the adapter and map them to `app` types at the boundary.
+  The app never sees a GORM struct - swapping ORMs later touches only this package.
+- We drive schema with explicit SQL files via `golang-migrate`, **not** GORM's `AutoMigrate`.
+  AutoMigrate infers schema from structs and silently alters tables - fine for a toy, dangerous in
+  production (no review, no down-migration, surprising column changes). Real migrations are versioned,
+  reviewable, and reversible.
+
+### 18. Redis rolling window: INCR then EXPIRE only on the first hit (`redisstore/store.go`)
+
+- Rate limiting uses `INCR key` (atomic increment, returns the new value). We call `EXPIRE key ttl`
+  **only when the value is 1** - i.e. the first request in a window. That fixes the window to start at
+  the first request and roll off as a whole. If we re-set the TTL on every INCR, a steady stream of
+  requests would keep pushing expiry out and the limit would never reset.
+- Missing key: go-redis returns a sentinel `redis.Nil`. The adapter translates it to
+  `domain.ErrNotFound` so the app layer never learns that Redis exists.
+
+### 19. Kafka: typed envelope, partition keys, and at-least-once (`pkg/platform/kafka`)
+
+- Every message is wrapped in an `Envelope{MsgType, Data}`. `MsgType` (a discriminator like
+  `"otp.RequestedEvent"`) lets a consumer that handles several event types switch before decoding.
+  This mirrors the production convention.
+- **Partition key:** events with a `PartitionKey()` method (our `RequestedEvent` returns its
+  RequestID) are keyed so all messages for one request go to the same partition and stay ordered.
+  Kafka only guarantees order *within* a partition.
+- **Consumer group + at-least-once:** the handler runs, and only on success do we `MarkMessage`
+  (advance the offset). If the handler fails we do **not** mark, so the message is redelivered. This
+  is "at-least-once" delivery - the reason every consumer must be **idempotent** (safe to process the
+  same message twice). It is a core distributed-systems tradeoff: at-least-once (possible duplicates)
+  vs at-most-once (possible loss); we choose no-loss and handle duplicates.
+
+### 20. Testing an HTTP client with httptest (`resendmail/provider_test.go`)
+
+- To test code that calls an external API (Resend) without hitting the network, we start a local
+  `httptest.NewServer` that plays the API, and inject its URL into the adapter (`baseURL`). The test
+  asserts the request we send (method, path, `Authorization` header, body) and controls the response.
+- Injecting `baseURL` and the `*http.Client` is dependency injection again - the same trick that made
+  the domain testable, applied to an outbound HTTP call.
+
