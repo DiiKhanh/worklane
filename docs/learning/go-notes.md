@@ -267,3 +267,51 @@ code; every entry points at a real file.
   that are meant to be shared. This is the pragmatic "shared database" MVP simplification; a stricter
   design would give each service its own tables.
 
+---
+
+## Phase 4 - running the whole thing (docker-compose)
+
+### 26. Multi-stage Docker builds + distroless
+
+- The `Dockerfile` has two stages: a `golang:1.25` **build** stage compiles a static binary
+  (`CGO_ENABLED=0`), then a tiny `distroless/static` **runtime** stage copies just that binary. The
+  final image has no shell, no package manager, no OS cruft - smaller and a much smaller attack
+  surface.
+- Build context is the **repo root** (not the service folder) because it is one Go module with shared
+  `pkg/` - the build needs the whole module. `.dockerignore` keeps `.git`, docs, etc. out of the
+  context so builds are fast.
+
+### 27. Compose startup ordering: healthchecks + depends_on
+
+- A service that `log.Fatal`s when it cannot reach MySQL/Kafka must not start before those are ready.
+  Each infra service has a `healthcheck`; app services declare `depends_on: { mysql: { condition:
+  service_healthy } }`. Compose then waits for *healthy*, not just *started*.
+- `otp-api` owns migrations (runs them at boot), so `otp-dispatcher` depends on `otp-api` having
+  started - one service is the schema owner, avoiding two services racing to migrate.
+
+### 28. Traefik file provider vs docker provider
+
+- We first tried Traefik's **docker provider** (reads container labels via the Docker socket). It
+  failed here because the very new Docker Engine (v29) and Traefik's bundled Docker client
+  disagreed on API version. Lesson: the socket-based provider couples you to Docker's API.
+- We switched to the **file provider**: a static `traefik.yml` points at a `dynamic.yml` that declares
+  the router (`PathPrefix(/v1)` → `http://otp-api:8888`), a rate-limit and a CORS middleware. No
+  socket, no version coupling - and it is closer to how you would configure an ingress declaratively.
+
+### 29. The provider swap paying off (SMTP vs Resend)
+
+- Because `EmailProvider` is a port, the composition root picks the adapter by config
+  (`EMAIL_PROVIDER=smtp|resend`). Local/e2e uses `smtpmail` → MailHog (a fake inbox with an HTTP API a
+  test can read); production uses `resendmail`. The domain and handler never change. This is the exact
+  "provider abstraction" the design spec wanted - and the seam where SMS/Twilio will later slot in.
+- We also caught a real bug this way: the delivery log had a hard-coded `"resend"` provider name even
+  when sending via SMTP. Fixing it meant threading the provider label through config - now the audit
+  row tells the truth.
+
+### 30. A self-seeding e2e test
+
+- `test/e2e` (build tag `e2e`) runs against the live compose stack. Instead of a manual "seed a key
+  first" step, the test **seeds its own** tenant+key straight into MySQL (reusing `pkg/security`),
+  then drives the HTTP flow through Traefik and reads the code back from MailHog's search API. One
+  command (`go test -tags=e2e ./test/e2e/`) proves the entire thread works, deterministically.
+
