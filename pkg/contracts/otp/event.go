@@ -14,6 +14,10 @@ type RequestedEvent struct {
 	Code      string `json:"code"` // never logged
 }
 
+// PartitionKey makes all events for one request land on the same Kafka partition, so a
+// consumer sees them in order. The kafka producer uses this when the event provides it.
+func (e RequestedEvent) PartitionKey() string { return e.RequestID }
+
 // State strings are the shared persistence/wire vocabulary for otp_requests.state.
 const (
 	StateRequested = "requested"
