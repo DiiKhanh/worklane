@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/duykhanh/worklane/pkg/security"
 	otphttp "github.com/duykhanh/worklane/services/otp-api/internal/adapters/inbound/http"
 	"github.com/duykhanh/worklane/services/otp-api/internal/app"
 	"github.com/duykhanh/worklane/services/otp-api/internal/domain"
@@ -53,7 +54,7 @@ func newServer(svc otphttp.OTPService, repo app.Repo) http.Handler {
 const testKey = "testkey"
 
 func validRepo() *fakeRepo {
-	return &fakeRepo{validHashedKey: domain.HashCode(testKey, "")}
+	return &fakeRepo{validHashedKey: security.HashKey(testKey)}
 }
 
 func do(t *testing.T, h http.Handler, method, path, key, body string) *httptest.ResponseRecorder {
