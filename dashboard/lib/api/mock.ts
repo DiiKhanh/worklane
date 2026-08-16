@@ -135,7 +135,7 @@ export class MockDataSource implements DataSource {
   private readonly realClock: boolean;
   private readonly t0: number;
   private readonly fixtures: Fixtures;
-  private readonly inflight: DeliveryLog[];
+  private readonly inflight: { log: DeliveryLog; sentAt: number }[];
   private readonly codes = new Map<string, string>();
 
   constructor(opts: Options = {}) {
@@ -146,14 +146,16 @@ export class MockDataSource implements DataSource {
     // Three deliveries that "land" a few seconds apart after construction.
     const r = rng(0x1234abcd);
     this.inflight = [4000, 9000, 16000].map((offset) => ({
-      requestId: shortId("req", r),
-      provider: pick(r, PROVIDERS),
-      status: "sent" as const,
-      latencyMs: 40 + Math.floor(r() * 500),
-      error: undefined,
-      createdAt: iso(this.t0 + offset),
-      _sentAt: this.t0 + offset,
-    })) as (DeliveryLog & { _sentAt: number })[];
+      sentAt: this.t0 + offset,
+      log: {
+        requestId: shortId("req", r),
+        provider: pick(r, PROVIDERS),
+        status: "sent" as const,
+        latencyMs: 40 + Math.floor(r() * 500),
+        error: undefined,
+        createdAt: iso(this.t0 + offset),
+      },
+    }));
   }
 
   private async latency() {
@@ -173,9 +175,9 @@ export class MockDataSource implements DataSource {
   async listLogs(): Promise<DeliveryLog[]> {
     await this.latency();
     const now = this.now();
-    const landed = (this.inflight as (DeliveryLog & { _sentAt: number })[])
-      .filter((l) => l._sentAt <= now)
-      .map(({ _sentAt, ...log }) => log);
+    const landed = this.inflight
+      .filter((entry) => entry.sentAt <= now)
+      .map((entry) => entry.log);
     return [...landed, ...this.fixtures.logs];
   }
 

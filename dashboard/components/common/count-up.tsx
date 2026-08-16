@@ -19,14 +19,10 @@ export function CountUp({
   className?: string;
 }) {
   const reduce = useReducedMotion();
-  const [display, setDisplay] = useState(value);
+  const [display, setDisplay] = useState(0);
 
   useEffect(() => {
-    if (reduce) {
-      setDisplay(value);
-      return;
-    }
-    setDisplay(0);
+    if (reduce) return;
     const controls = animate(0, value, {
       duration: durationMs / 1000,
       ease: [0.23, 1, 0.32, 1],
@@ -35,9 +31,10 @@ export function CountUp({
     return () => controls.stop();
   }, [value, reduce, durationMs]);
 
+  const shown = reduce ? value : display;
   const text = format
-    ? format(display)
-    : Math.round(display).toLocaleString("en-US");
+    ? format(shown)
+    : Math.round(shown).toLocaleString("en-US");
 
   return (
     <span className={className} suppressHydrationWarning>
