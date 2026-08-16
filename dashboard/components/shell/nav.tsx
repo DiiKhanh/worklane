@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
@@ -25,6 +26,8 @@ export const NAV_ITEMS: NavItem[] = [
 
 export function Nav() {
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
     <nav className="flex flex-col gap-0.5 px-2">
       {NAV_ITEMS.map((item) => {
@@ -43,13 +46,16 @@ export function Nav() {
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {active && (
-              <motion.span
-                layoutId="nav-active"
-                className="absolute inset-0 -z-10 rounded-md bg-accent"
-                transition={{ type: "spring", duration: 0.4, bounce: 0.15 }}
-              />
-            )}
+            {active &&
+              (mounted ? (
+                <motion.span
+                  layoutId="nav-active"
+                  className="absolute inset-0 -z-10 rounded-md bg-accent"
+                  transition={{ type: "spring", duration: 0.4, bounce: 0.15 }}
+                />
+              ) : (
+                <span className="absolute inset-0 -z-10 rounded-md bg-accent" />
+              ))}
             <item.icon
               className={cn(
                 "size-4 shrink-0 transition-colors",
