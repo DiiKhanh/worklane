@@ -224,10 +224,11 @@ function computeOverview(f: Fixtures, now: number): Overview {
     t.setMinutes(0, 0, 0);
     const point = buckets.get(t.toISOString());
     if (!point) continue;
-    point.requested += 1;
+    // Mutually exclusive buckets so a stacked area sums to the bucket total.
     if (req.state === "verified") point.verified += 1;
     else if (req.state === "failed") point.failed += 1;
     else if (req.state === "sent" || req.state === "expired") point.sent += 1;
+    else point.requested += 1; // still-pending
   }
 
   return {

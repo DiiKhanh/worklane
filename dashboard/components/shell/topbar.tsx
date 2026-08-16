@@ -43,6 +43,7 @@ export function Topbar() {
           variant="ghost"
           size="icon"
           aria-label="Documentation"
+          nativeButton={false}
           render={
             <a href="https://github.com" target="_blank" rel="noreferrer" />
           }
