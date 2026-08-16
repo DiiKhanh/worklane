@@ -1,0 +1,193 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Semantic OTP state colors, shared by badges and charts. */
+  --color-state-requested: var(--state-requested);
+  --color-state-sent: var(--state-sent);
+  --color-state-verified: var(--state-verified);
+  --color-state-failed: var(--state-failed);
+  --color-state-expired: var(--state-expired);
+}
+
+/* Light theme - clean, cool-neutral surfaces with a violet accent. */
+:root {
+  --background: oklch(0.99 0.002 286);
+  --foreground: oklch(0.21 0.01 286);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.01 286);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.01 286);
+  --primary: oklch(0.55 0.2 280);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.965 0.004 286);
+  --secondary-foreground: oklch(0.25 0.01 286);
+  --muted: oklch(0.965 0.004 286);
+  --muted-foreground: oklch(0.52 0.014 286);
+  --accent: oklch(0.96 0.008 286);
+  --accent-foreground: oklch(0.25 0.01 286);
+  --destructive: oklch(0.58 0.22 25);
+  --border: oklch(0.905 0.004 286);
+  --input: oklch(0.905 0.004 286);
+  --ring: oklch(0.55 0.2 280);
+
+  --state-requested: oklch(0.62 0.14 75);
+  --state-sent: oklch(0.55 0.17 250);
+  --state-verified: oklch(0.55 0.15 155);
+  --state-failed: oklch(0.58 0.22 25);
+  --state-expired: oklch(0.55 0.02 286);
+
+  --chart-1: var(--state-sent);
+  --chart-2: var(--state-verified);
+  --chart-3: var(--state-requested);
+  --chart-4: var(--state-failed);
+  --chart-5: var(--primary);
+
+  --radius: 0.625rem;
+
+  /* Motion curves (theme-independent). Stronger than the built-in CSS easings. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  --sidebar: oklch(0.985 0.002 286);
+  --sidebar-foreground: oklch(0.21 0.01 286);
+  --sidebar-primary: oklch(0.55 0.2 280);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.96 0.008 286);
+  --sidebar-accent-foreground: oklch(0.25 0.01 286);
+  --sidebar-border: oklch(0.905 0.004 286);
+  --sidebar-ring: oklch(0.55 0.2 280);
+}
+
+/* Dark theme (default) - near-black developer surface, violet accent, thin borders. */
+.dark {
+  --background: oklch(0.155 0.006 286);
+  --foreground: oklch(0.96 0.003 286);
+  --card: oklch(0.19 0.007 286);
+  --card-foreground: oklch(0.96 0.003 286);
+  --popover: oklch(0.19 0.007 286);
+  --popover-foreground: oklch(0.96 0.003 286);
+  --primary: oklch(0.64 0.19 280);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.24 0.008 286);
+  --secondary-foreground: oklch(0.96 0.003 286);
+  --muted: oklch(0.23 0.008 286);
+  --muted-foreground: oklch(0.7 0.02 286);
+  --accent: oklch(0.26 0.01 286);
+  --accent-foreground: oklch(0.96 0.003 286);
+  --destructive: oklch(0.66 0.2 25);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.64 0.19 280 / 60%);
+
+  --state-requested: oklch(0.8 0.14 80);
+  --state-sent: oklch(0.7 0.15 250);
+  --state-verified: oklch(0.74 0.16 158);
+  --state-failed: oklch(0.68 0.2 25);
+  --state-expired: oklch(0.62 0.02 286);
+
+  --chart-1: var(--state-sent);
+  --chart-2: var(--state-verified);
+  --chart-3: var(--state-requested);
+  --chart-4: var(--state-failed);
+  --chart-5: var(--primary);
+
+  --sidebar: oklch(0.17 0.006 286);
+  --sidebar-foreground: oklch(0.96 0.003 286);
+  --sidebar-primary: oklch(0.64 0.19 280);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.24 0.008 286);
+  --sidebar-accent-foreground: oklch(0.96 0.003 286);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.64 0.19 280 / 60%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  /* Every pressable element confirms the press. Subtle, fast, GPU-only. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    transition: transform 160ms var(--ease-out);
+  }
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active {
+    transform: scale(0.97);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button:active,
+    [role="button"]:active {
+      transform: none;
+    }
+  }
+}
+
+/* A freshly-arrived table row briefly glows, then settles. */
+@keyframes row-fresh {
+  from {
+    background: color-mix(in oklch, var(--state-verified) 16%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+.row-fresh {
+  animation: row-fresh 3s var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-fresh {
+    animation: none;
+  }
+}
