@@ -26,8 +26,10 @@ type DataTableProps<TData, TValue> = {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   pageSize?: number;
-  /** Optional stable key so rows can animate on enter (e.g. new log rows). */
+  /** Optional stable key so rows keep identity across polling refetches. */
   rowKey?: (row: TData) => string;
+  /** Optional per-row class, e.g. to highlight a freshly-arrived row. */
+  rowClassName?: (row: TData) => string | undefined;
 };
 
 export function DataTable<TData, TValue>({
@@ -35,6 +37,7 @@ export function DataTable<TData, TValue>({
   data,
   pageSize = 10,
   rowKey,
+  rowClassName,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -101,7 +104,10 @@ export function DataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className="group/row border-border/70"
+                  className={cn(
+                    "group/row border-border/70",
+                    rowClassName?.(row.original),
+                  )}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="py-2.5">

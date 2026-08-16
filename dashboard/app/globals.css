@@ -173,3 +173,21 @@
     }
   }
 }
+
+/* A freshly-arrived table row briefly glows, then settles. */
+@keyframes row-fresh {
+  from {
+    background: color-mix(in oklch, var(--state-verified) 16%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+.row-fresh {
+  animation: row-fresh 3s var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-fresh {
+    animation: none;
+  }
+}
