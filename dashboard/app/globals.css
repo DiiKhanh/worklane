@@ -89,6 +89,11 @@
   --chart-5: var(--primary);
 
   --radius: 0.625rem;
+
+  /* Motion curves (theme-independent). Stronger than the built-in CSS easings. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
   --sidebar: oklch(0.985 0.002 286);
   --sidebar-foreground: oklch(0.21 0.01 286);
   --sidebar-primary: oklch(0.55 0.2 280);
@@ -151,5 +156,20 @@
   }
   html {
     @apply font-sans;
+  }
+  /* Every pressable element confirms the press. Subtle, fast, GPU-only. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    transition: transform 160ms var(--ease-out);
+  }
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active {
+    transform: scale(0.97);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button:active,
+    [role="button"]:active {
+      transform: none;
+    }
   }
 }
