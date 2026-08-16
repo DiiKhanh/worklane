@@ -75,18 +75,36 @@ sequenceDiagram
 
     K->>D: consume otp.requested
     D->>M: render template + send email
-    M-->>D: ok / error
-    D->>DB: insert delivery_logs; state = sent|failed
-    D->>K: publish otp.sent | otp.failed (+ otp.dlq on failure)
+
+    alt Email sent successfully
+        M-->>D: ok
+        D->>DB: insert delivery_logs, state = sent
+        D->>K: publish otp.sent
+    else Email delivery failed
+        M-->>D: error
+        D->>DB: insert delivery_logs, state = failed
+        D->>K: publish otp.failed
+        D->>K: publish otp.dlq
+    end
 
     Note over C,M: --- later ---
+
     C->>GW: POST /v1/otp/verify (code)
     GW->>A: forward
-    A->>R: get record; attempt-lock guard
+    A->>R: get record + attempt-lock guard
     A->>A: VerifyHash (constant-time)
-    A->>R: delete code (single use)
-    A->>DB: state = verified
-    A-->>C: 200 verified | 401 mismatch | 410 gone | 429 locked
+
+    alt Code valid
+        A->>R: delete code (single use)
+        A->>DB: state = verified
+        A-->>C: 200 verified
+    else Code mismatch
+        A-->>C: 401 mismatch
+    else Code expired or missing
+        A-->>C: 410 gone
+    else Too many attempts
+        A-->>C: 429 locked
+    end
 ```
 
 ---
