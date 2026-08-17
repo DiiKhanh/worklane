@@ -12,6 +12,7 @@ import { StateBadge } from "@/components/common/state-badge";
 import { CopyButton } from "@/components/common/copy-button";
 import { EmptyState } from "@/components/common/empty-state";
 import { RequestDetail } from "@/components/requests/request-detail";
+import { SectionHeading } from "@/components/common/section-heading";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
@@ -103,8 +104,12 @@ export function RequestsView() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <SectionHeading
+        title="OTP requests"
+        description="Every code issued for your tenant. Recipients are masked at rest. Select a request for its lifecycle."
+      />
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-1.5">
           {STATES.map((s) => {
             const active = activeState === s;
