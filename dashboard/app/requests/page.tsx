@@ -6,7 +6,7 @@ export default function RequestsPage() {
     <div>
       <SectionHeading
         title="OTP requests"
-        description="Every code issued for your tenant. Recipients are masked at rest."
+        description="Every code issued for your tenant. Recipients are masked at rest. Select a request for its lifecycle."
       />
       <RequestsView />
     </div>

@@ -1,15 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ListChecks, Search } from "lucide-react";
 import type { OtpRequest, OtpState } from "@/lib/api/types";
 import { useRequests } from "@/lib/queries/use-requests";
+import { useLogs } from "@/lib/queries/use-logs";
 import { useUIStore } from "@/lib/store/ui";
 import { DataTable } from "@/components/common/data-table";
 import { StateBadge } from "@/components/common/state-badge";
 import { CopyButton } from "@/components/common/copy-button";
 import { EmptyState } from "@/components/common/empty-state";
+import { RequestDetail } from "@/components/requests/request-detail";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
@@ -71,7 +73,9 @@ const columns: ColumnDef<OtpRequest>[] = [
 
 export function RequestsView() {
   const { data, isLoading } = useRequests();
+  const { data: logs } = useLogs();
   const { filters, setFilter } = useUIStore();
+  const [openId, setOpenId] = useState<string | null>(null);
   const activeState = filters.state ?? "all";
   const search = filters.search ?? "";
 
@@ -84,6 +88,19 @@ export function RequestsView() {
       return stateOk && searchOk;
     });
   }, [data, activeState, search]);
+
+  const openRequest = openId
+    ? data?.find((r) => r.id === openId)
+    : undefined;
+  if (openRequest) {
+    return (
+      <RequestDetail
+        request={openRequest}
+        log={logs?.find((l) => l.requestId === openRequest.id)}
+        onBack={() => setOpenId(null)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -128,7 +145,13 @@ export function RequestsView() {
           description="Try a different state or search term."
         />
       ) : (
-        <DataTable columns={columns} data={filtered} pageSize={12} />
+        <DataTable
+          columns={columns}
+          data={filtered}
+          pageSize={12}
+          rowKey={(r) => r.id}
+          onRowClick={(r) => setOpenId(r.id)}
+        />
       )}
     </div>
   );
