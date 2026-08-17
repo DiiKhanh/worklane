@@ -10,7 +10,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, ChevronsUpDown } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -30,6 +30,8 @@ type DataTableProps<TData, TValue> = {
   rowKey?: (row: TData) => string;
   /** Optional per-row class, e.g. to highlight a freshly-arrived row. */
   rowClassName?: (row: TData) => string | undefined;
+  /** When set, rows become clickable (Enter/Space too) and gain a trailing chevron. */
+  onRowClick?: (row: TData) => void;
 };
 
 export function DataTable<TData, TValue>({
@@ -38,12 +40,27 @@ export function DataTable<TData, TValue>({
   pageSize = 10,
   rowKey,
   rowClassName,
+  onRowClick,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
+  const cols: ColumnDef<TData, TValue>[] = onRowClick
+    ? [
+        ...columns,
+        {
+          id: "__chevron",
+          header: "",
+          enableSorting: false,
+          cell: () => (
+            <ChevronRight className="size-4 text-muted-foreground" />
+          ),
+        } as ColumnDef<TData, TValue>,
+      ]
+    : columns;
+
   const table = useReactTable({
     data,
-    columns,
+    columns: cols,
     state: { sorting },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
@@ -104,8 +121,25 @@ export function DataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
+                  role={onRowClick ? "button" : undefined}
+                  tabIndex={onRowClick ? 0 : undefined}
+                  onClick={
+                    onRowClick ? () => onRowClick(row.original) : undefined
+                  }
+                  onKeyDown={
+                    onRowClick
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onRowClick(row.original);
+                          }
+                        }
+                      : undefined
+                  }
                   className={cn(
                     "group/row border-border/70",
+                    onRowClick &&
+                      "cursor-pointer outline-none hover:bg-muted/50 focus-visible:bg-muted/50",
                     rowClassName?.(row.original),
                   )}
                 >
@@ -122,7 +156,7 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  colSpan={cols.length}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No results.

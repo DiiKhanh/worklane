@@ -22,6 +22,10 @@ const ROUTES = [
   { path: "/requests", name: "requests" },
   { path: "/logs", name: "logs" },
   { path: "/playground", name: "playground" },
+  { path: "/templates", name: "templates" },
+  { path: "/campaigns", name: "campaigns" },
+  { path: "/links", name: "links" },
+  { path: "/login", name: "login" },
 ];
 const THEMES = ["dark", "light"] as const;
 
@@ -50,6 +54,19 @@ async function main() {
       await page.screenshot({ path: file });
       console.log("captured", path.relative(process.cwd(), file));
     }
+
+    // Request detail is reached by opening a row; capture it separately.
+    await page.goto(BASE + "/requests", { waitUntil: "networkidle" });
+    await page.waitForTimeout(1000);
+    const firstRow = page.getByRole("button").filter({ hasText: "req_" }).first();
+    if (await firstRow.count()) {
+      await firstRow.click();
+      await page.waitForTimeout(600);
+      const detailFile = path.join(OUT, `request-detail-${theme}.png`);
+      await page.screenshot({ path: detailFile });
+      console.log("captured", path.relative(process.cwd(), detailFile));
+    }
+
     await context.close();
   }
 
