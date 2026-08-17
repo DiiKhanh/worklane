@@ -8,11 +8,14 @@ import {
   ListChecks,
   Truck,
   FlaskConical,
+  FileText,
+  Megaphone,
+  Link as LinkIcon,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type NavItem = { href: string; label: string; icon: LucideIcon };
+type NavItem = { href: string; label: string; icon: LucideIcon; soon?: boolean };
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -20,6 +23,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/requests", label: "OTP requests", icon: ListChecks },
   { href: "/logs", label: "Delivery logs", icon: Truck },
   { href: "/playground", label: "Playground", icon: FlaskConical },
+  { href: "/templates", label: "Templates", icon: FileText, soon: true },
+  { href: "/campaigns", label: "Campaigns", icon: Megaphone, soon: true },
+  { href: "/links", label: "Links", icon: LinkIcon, soon: true },
 ];
 
 export function Nav() {
@@ -54,6 +60,11 @@ export function Nav() {
               )}
             />
             {item.label}
+            {item.soon && (
+              <span className="ml-auto rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                soon
+              </span>
+            )}
           </Link>
         );
       })}
