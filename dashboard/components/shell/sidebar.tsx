@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Nav } from "./nav";
 import { LogoMark } from "./logo";
-import { TenantSwitcher } from "./tenant-switcher";
+import { SidebarIdentity } from "./sidebar-identity";
 
 export function Sidebar() {
   return (
@@ -23,7 +23,7 @@ export function Sidebar() {
       </div>
 
       <div className="p-3">
-        <TenantSwitcher />
+        <SidebarIdentity />
       </div>
     </aside>
   );

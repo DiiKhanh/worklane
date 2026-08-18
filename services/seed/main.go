@@ -25,9 +25,11 @@ func newID() string {
 
 func main() {
 	name := flag.String("name", "", "tenant name (required)")
+	email := flag.String("email", "", "user email (required)")
+	password := flag.String("password", "", "user password (required)")
 	flag.Parse()
-	if *name == "" {
-		log.Fatal("seed: --name is required")
+	if *name == "" || *email == "" || *password == "" {
+		log.Fatal("seed: --name, --email and --password are required")
 	}
 
 	dsn := config.Env("MYSQL_DSN", "root:secret@tcp(localhost:3306)/otp?parseTime=true&multiStatements=true")
@@ -52,6 +54,18 @@ func main() {
 		log.Fatalf("seed: insert api key: %v", err)
 	}
 
+	pwHash, err := security.HashPassword(*password)
+	if err != nil {
+		log.Fatalf("seed: hash password: %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO users (id, tenant_id, email, password_hash, status) VALUES (?, ?, ?, ?, 'active')",
+		newID(), tenantID, *email, pwHash,
+	).Error; err != nil {
+		log.Fatalf("seed: insert user: %v", err)
+	}
+
 	fmt.Printf("tenant_id: %s\n", tenantID)
+	fmt.Printf("user: %s (password set)\n", *email)
 	fmt.Printf("API key (shown once, store it now):\n\n    %s\n\n", key)
 }

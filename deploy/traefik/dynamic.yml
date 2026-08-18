@@ -10,12 +10,23 @@ http:
       middlewares:
         - otp-ratelimit
         - otp-cors
+    authsvc:
+      rule: "PathPrefix(`/auth`)"
+      entryPoints:
+        - web
+      service: authsvc
+      middlewares:
+        - otp-cors
 
   services:
     otpapi:
       loadBalancer:
         servers:
           - url: "http://otp-api:8888"
+    authsvc:
+      loadBalancer:
+        servers:
+          - url: "http://auth-svc:8889"
 
   middlewares:
     otp-ratelimit:

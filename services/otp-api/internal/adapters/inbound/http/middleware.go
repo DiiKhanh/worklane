@@ -13,22 +13,31 @@ import (
 // tenantCtxKey is where the resolved tenant id is stashed for handlers to read.
 const tenantCtxKey = "tenant_id"
 
-// apiKeyAuth resolves `Authorization: Bearer <key>`, hashes the key, looks it up, and
-// injects the tenant id. Keys are stored hashed (never plaintext); we hash the incoming
-// key the same way the seed CLI did (security.HashKey) and compare.
-//
-// We do the auth here in the service rather than at the gateway (Traefik has no built-in
-// key-auth plugin), which also keeps the logic visible and unit-testable.
-func apiKeyAuth(repo app.Repo) gin.HandlerFunc {
+// authenticate resolves a Bearer token that is either a user JWT (dashboard) or a tenant
+// API key (machine). A JWT has three dot-separated parts; anything else is treated as an
+// opaque API key and looked up by hash. Both paths set tenant_id for downstream handlers.
+func authenticate(v *security.Verifier, repo app.Repo) gin.HandlerFunc {
 	const prefix = "Bearer "
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if !strings.HasPrefix(auth, prefix) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing api key"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing credentials"})
 			return
 		}
-		key := strings.TrimSpace(strings.TrimPrefix(auth, prefix))
-		ak, err := repo.FindAPIKey(c.Request.Context(), security.HashKey(key))
+		token := strings.TrimSpace(strings.TrimPrefix(auth, prefix))
+
+		if strings.Count(token, ".") == 2 {
+			claims, err := v.Parse(token)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+				return
+			}
+			c.Set(tenantCtxKey, claims.TenantID)
+			c.Next()
+			return
+		}
+
+		ak, err := repo.FindAPIKey(c.Request.Context(), security.HashKey(token))
 		if err != nil || ak.Status != "active" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
 			return

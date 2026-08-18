@@ -9,3 +9,6 @@ cover.out
 
 # OS
 .DS_Store
+
+# Local dev signing keys - never commit
+deploy/compose/secrets/

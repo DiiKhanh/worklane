@@ -1,100 +1,87 @@
 "use client";
 
 import { useState } from "react";
-import { Send, ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogIn } from "lucide-react";
+import { login } from "@/lib/api/auth";
+import { useUIStore } from "@/lib/store/ui";
 import { Panel } from "@/components/common/panel";
 import { LogoMark } from "@/components/shell/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const STORAGE_KEY = "worklane-token";
+
 /**
- * Roadmap sign-in: the OTP loop applied to auth. The real dashboard authenticates
- * with a bearer key from an env var and has no session, so this is presentational
- * only - submitting does not sign anyone in.
+ * Working sign-in: email + password against auth-svc. On success the JWT is stored (UI
+ * store + localStorage) and the operator is sent to the dashboard.
  */
 export function LoginView() {
-  const [step, setStep] = useState<"email" | "code">("email");
+  const router = useRouter();
+  const setToken = useUIStore((s) => s.setToken);
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await login(email, password);
+      setToken(res.token);
+      localStorage.setItem(STORAGE_KEY, res.token);
+      router.push("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-6">
       <div className="grid w-[380px] gap-5">
         <span className="flex items-center justify-center gap-2">
           <LogoMark className="size-6" />
-          <span className="text-[15px] font-semibold tracking-tight">
-            worklane
-          </span>
+          <span className="text-[15px] font-semibold tracking-tight">worklane</span>
         </span>
-
-        <Panel
-          title={step === "email" ? "Sign in" : "Enter your code"}
-          description={
-            step === "email"
-              ? "We send a one-time code to your work email."
-              : `Sent to ${email}. It expires in 5 minutes.`
-          }
-        >
-          {step === "email" ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (email) setStep("code");
-              }}
-              className="grid gap-4"
-            >
-              <div className="grid gap-1.5">
-                <Label htmlFor="login-email">Work email</Label>
-                <Input
-                  id="login-email"
-                  placeholder="you@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <Button type="submit" className="w-full">
-                <Send className="size-4" />
-                Send code
-              </Button>
-            </form>
-          ) : (
-            <form
-              onSubmit={(e) => e.preventDefault()}
-              className="grid gap-4"
-            >
-              <div className="grid gap-1.5">
-                <Label htmlFor="login-code">6-digit code</Label>
-                <Input
-                  id="login-code"
-                  inputMode="numeric"
-                  maxLength={6}
-                  placeholder="000000"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  className="font-mono tracking-[0.3em]"
-                />
-              </div>
-              <Button type="submit" className="w-full">
-                <ShieldCheck className="size-4" />
-                Verify and continue
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setStep("email")}
-              >
-                Use a different email
-              </Button>
-            </form>
-          )}
+        <Panel title="Sign in" description="Use your worklane operator account.">
+          <form onSubmit={onSubmit} className="grid gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="login-email">Email</Label>
+              <Input
+                id="login-email"
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="login-password">Password</Label>
+              <Input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {error && (
+              <p role="alert" className="m-0 text-xs text-[var(--state-failed)]">
+                {error}
+              </p>
+            )}
+            <Button type="submit" className="w-full" disabled={busy}>
+              <LogIn className="size-4" />
+              {busy ? "Signing in..." : "Sign in"}
+            </Button>
+          </form>
         </Panel>
-
-        <p className="m-0 text-center text-xs text-muted-foreground">
-          Roadmap screen - the repository authenticates with a bearer key, not a
-          session.
-        </p>
       </div>
     </div>
   );

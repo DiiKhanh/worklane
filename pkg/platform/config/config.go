@@ -17,6 +17,21 @@ func Env(key, def string) string {
 	return def
 }
 
+// EnvOrFile returns the value of key; if that is empty it reads the file named by
+// key+"_FILE". This lets multi-line secrets (like PEM keys) be mounted as files rather
+// than inlined into committed compose YAML. Falls back to def if neither is set.
+func EnvOrFile(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return v
+	}
+	if path, ok := os.LookupEnv(key + "_FILE"); ok && path != "" {
+		if b, err := os.ReadFile(path); err == nil {
+			return string(b)
+		}
+	}
+	return def
+}
+
 // EnvInt parses key as an int, falling back to def on missing/invalid values.
 func EnvInt(key string, def int) int {
 	if v, ok := os.LookupEnv(key); ok {
