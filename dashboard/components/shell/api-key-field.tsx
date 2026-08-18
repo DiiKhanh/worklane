@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { KeyRound, Check } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useUIStore } from "@/lib/store/ui";
 import { Input } from "@/components/ui/input";
 
@@ -16,6 +17,7 @@ const STORAGE_KEY = "worklane-api-key";
 export function ApiKeyField() {
   const token = useUIStore((s) => s.token);
   const setToken = useUIStore((s) => s.setToken);
+  const queryClient = useQueryClient();
   const [focused, setFocused] = useState(false);
 
   // Rehydrate the key from localStorage once on mount (browser-only concern kept
@@ -39,7 +41,11 @@ export function ApiKeyField() {
         value={token}
         onChange={(e) => update(e.target.value)}
         onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onBlur={() => {
+          setFocused(false);
+          // Refetch data with the new key so it loads without a page reload.
+          queryClient.invalidateQueries();
+        }}
         placeholder="Paste API key"
         aria-label="API key"
         autoComplete="off"
