@@ -11,4 +11,7 @@ var (
 	ErrNotFound        = errors.New("otp: no active code")
 	ErrCodeMismatch    = errors.New("otp: code mismatch")
 	ErrExpired         = errors.New("otp: code expired")
+
+	ErrInvalidRecipient = errors.New("otp: recipient does not match channel")
+	ErrInvalidChannel   = errors.New("otp: unsupported channel")
 )
