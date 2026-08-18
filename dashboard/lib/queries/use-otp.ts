@@ -7,7 +7,8 @@ import { qk } from "./keys";
 export function useSend() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (recipient: string) => getDataSource().send(recipient),
+    mutationFn: (vars: { recipient: string; channel: string }) =>
+      getDataSource().send(vars.recipient, vars.channel),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.requests });
       qc.invalidateQueries({ queryKey: qk.logs });
@@ -18,8 +19,8 @@ export function useSend() {
 export function useVerify() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { recipient: string; code: string }) =>
-      getDataSource().verify(vars.recipient, vars.code),
+    mutationFn: (vars: { recipient: string; code: string; channel: string }) =>
+      getDataSource().verify(vars.recipient, vars.code, vars.channel),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.requests });
     },

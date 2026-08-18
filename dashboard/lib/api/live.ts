@@ -97,11 +97,11 @@ export class LiveDataSource implements DataSource {
     );
   }
 
-  async send(recipient: string): Promise<SendResult> {
+  async send(recipient: string, channel: string): Promise<SendResult> {
     const res = await fetch(this.baseUrl + "/v1/otp/send", {
       method: "POST",
       headers: this.authHeaders(),
-      body: JSON.stringify({ recipient }),
+      body: JSON.stringify({ recipient, channel }),
     });
     if (!res.ok) throw new Error(`send failed: ${res.status}`);
     const body = (await res.json()) as { request_id: string };
@@ -109,6 +109,8 @@ export class LiveDataSource implements DataSource {
   }
 
   async verify(recipient: string, code: string): Promise<VerifyResult> {
+    // channel is accepted on the interface for symmetry; the backend keys verification
+    // by (tenant, recipient), so it is not sent.
     const res = await fetch(this.baseUrl + "/v1/otp/verify", {
       method: "POST",
       headers: this.authHeaders(),
