@@ -20,9 +20,9 @@ describe("MockDataSource", () => {
   it("verify matches the code from a prior send", async () => {
     const ds = new MockDataSource();
     const sent = await ds.send("dev@worklane.io", "email");
-    const good = await ds.verify("dev@worklane.io", sent.devCode!, "email");
+    const good = await ds.verify("dev@worklane.io", sent.devCode!);
     expect(good).toEqual({ ok: true, status: "verified" });
-    const bad = await ds.verify("dev@worklane.io", "000000", "email");
+    const bad = await ds.verify("dev@worklane.io", "000000");
     expect(bad.ok).toBe(false);
   });
 

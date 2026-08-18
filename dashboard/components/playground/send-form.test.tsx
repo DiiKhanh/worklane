@@ -13,7 +13,7 @@ function renderWithClient(ui: ReactNode) {
 describe("SendForm", () => {
   it("shows a validation error for an invalid email", async () => {
     const user = userEvent.setup();
-    renderWithClient(<SendForm />);
+    renderWithClient(<SendForm channel="email" />);
     await user.type(screen.getByLabelText(/recipient email/i), "not-an-email");
     await user.click(screen.getByRole("button", { name: /send code/i }));
     expect(
@@ -23,11 +23,19 @@ describe("SendForm", () => {
 
   it("issues a code and shows the returned request id", async () => {
     const user = userEvent.setup();
-    renderWithClient(<SendForm />);
+    renderWithClient(<SendForm channel="email" />);
     await user.type(screen.getByLabelText(/recipient email/i), "dev@worklane.io");
     await user.click(screen.getByRole("button", { name: /send code/i }));
     await waitFor(() =>
       expect(screen.getByText(/^req_/)).toBeInTheDocument(),
     );
+  });
+
+  it("shows a validation error for an invalid phone under the sms channel", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<SendForm channel="sms" />);
+    await user.type(screen.getByLabelText(/phone/i), "12345");
+    await user.click(screen.getByRole("button", { name: /send code/i }));
+    expect(await screen.findByText(/valid phone number/i)).toBeInTheDocument();
   });
 });
