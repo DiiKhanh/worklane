@@ -37,10 +37,14 @@ func (f *fakeRepo) UpdateState(_ context.Context, id, to string) error {
 	return nil
 }
 
-type fakePub struct{ topics []string }
+type fakePub struct {
+	topics []string
+	events []any
+}
 
-func (f *fakePub) Publish(_ context.Context, topic string, _ any) error {
+func (f *fakePub) Publish(_ context.Context, topic string, event any) error {
 	f.topics = append(f.topics, topic)
+	f.events = append(f.events, event)
 	return nil
 }
 
@@ -81,6 +85,39 @@ func TestHandle_Success(t *testing.T) {
 	}
 	if len(pub.topics) != 1 || pub.topics[0] != "otp.sent" {
 		t.Fatalf("expected publish to otp.sent, got %v", pub.topics)
+	}
+}
+
+func TestHandle_Success_PublishesSentEventWithoutCode(t *testing.T) {
+	h, _, pub := newHandler(map[string]Sender{"email": &fakeSender{name: "smtp", id: "msg-1"}})
+	if err := h.Handle(context.Background(), evt()); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	se, ok := pub.events[0].(contracts.SentEvent)
+	if !ok {
+		// A distinct type both fixes the msg_type discriminator and, by construction,
+		// keeps the OTP code off every downstream topic.
+		t.Fatalf("otp.sent payload must be a SentEvent, got %T", pub.events[0])
+	}
+	if se.RequestID != "r1" || se.TenantID != "t1" || se.Channel != "email" || se.Provider != "smtp" {
+		t.Fatalf("sent event fields wrong: %+v", se)
+	}
+}
+
+func TestHandle_Failure_PublishesFailedEventWithoutCode(t *testing.T) {
+	h, _, pub := newHandler(map[string]Sender{"email": &fakeSender{name: "smtp", err: errors.New("provider down")}})
+	if err := h.Handle(context.Background(), evt()); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	// Both otp.failed and otp.dlq carry the same FailedEvent (no code).
+	for i, topic := range []string{"otp.failed", "otp.dlq"} {
+		fe, ok := pub.events[i].(contracts.FailedEvent)
+		if !ok {
+			t.Fatalf("%s payload must be a FailedEvent, got %T", topic, pub.events[i])
+		}
+		if fe.RequestID != "r1" || fe.Provider != "smtp" || fe.Error != "provider down" {
+			t.Fatalf("%s failed event fields wrong: %+v", topic, fe)
+		}
 	}
 }
 

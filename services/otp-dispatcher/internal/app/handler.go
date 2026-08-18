@@ -60,7 +60,10 @@ func (h *Handler) Handle(ctx context.Context, evt contracts.RequestedEvent) erro
 		return err
 	}
 	_ = msgID // provider message id is available for richer logging later
-	return h.d.Pub.Publish(ctx, h.cfg.SentTopic, evt)
+	return h.d.Pub.Publish(ctx, h.cfg.SentTopic, contracts.SentEvent{
+		RequestID: evt.RequestID, TenantID: evt.TenantID, Recipient: evt.Recipient,
+		Channel: evt.Channel, Provider: sender.Name(),
+	})
 }
 
 // recordFailure logs a failed delivery, marks the request failed, and fans the event out
@@ -75,8 +78,12 @@ func (h *Handler) recordFailure(ctx context.Context, evt contracts.RequestedEven
 	if err := h.d.Repo.UpdateState(ctx, evt.RequestID, contracts.StateFailed); err != nil {
 		return err
 	}
-	if err := h.d.Pub.Publish(ctx, h.cfg.FailedTopic, evt); err != nil {
+	failed := contracts.FailedEvent{
+		RequestID: evt.RequestID, TenantID: evt.TenantID, Recipient: evt.Recipient,
+		Channel: evt.Channel, Provider: provider, Error: msg,
+	}
+	if err := h.d.Pub.Publish(ctx, h.cfg.FailedTopic, failed); err != nil {
 		return err
 	}
-	return h.d.Pub.Publish(ctx, h.cfg.DLQTopic, evt)
+	return h.d.Pub.Publish(ctx, h.cfg.DLQTopic, failed)
 }
