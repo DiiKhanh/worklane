@@ -15,6 +15,7 @@ import (
 type SendInput struct {
 	TenantID       string
 	Recipient      string
+	Channel        string // "email" | "sms"; empty defaults to email
 	IdempotencyKey string
 }
 
@@ -32,6 +33,14 @@ func codeKey(tenantID, recipient string) string {
 // Send issues an OTP: idempotency check, rate limit, generate code, store hash+TTL,
 // insert the audit row, and publish otp.requested for the dispatcher to deliver.
 func (s *Service) Send(ctx context.Context, in SendInput) (SendResult, error) {
+	channel := domain.Channel(in.Channel)
+	if channel == "" {
+		channel = domain.ChannelEmail
+	}
+	if err := domain.ValidateRecipient(channel, in.Recipient); err != nil {
+		return SendResult{}, err
+	}
+
 	// Idempotency: a repeated key returns the prior request without re-publishing, so a
 	// client retrying a timed-out request does not send a second email.
 	if in.IdempotencyKey != "" {
@@ -71,14 +80,14 @@ func (s *Service) Send(ctx context.Context, in SendInput) (SendResult, error) {
 
 	if err := s.d.Repo.InsertRequest(ctx, Request{
 		ID: requestID, TenantID: in.TenantID, Recipient: in.Recipient,
-		Channel: string(domain.ChannelEmail), State: contracts.StateRequested, CreatedAt: s.d.Clock.Now(),
+		Channel: string(channel), State: contracts.StateRequested, CreatedAt: s.d.Clock.Now(),
 	}); err != nil {
 		return SendResult{}, err
 	}
 
 	evt := contracts.RequestedEvent{
 		RequestID: requestID, TenantID: in.TenantID, Recipient: in.Recipient,
-		Channel: string(domain.ChannelEmail), Code: code,
+		Channel: string(channel), Code: code,
 	}
 	if err := s.d.Pub.Publish(ctx, s.cfg.RequestedTopic, evt); err != nil {
 		return SendResult{}, err

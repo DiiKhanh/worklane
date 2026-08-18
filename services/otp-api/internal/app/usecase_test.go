@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	contracts "github.com/duykhanh/worklane/pkg/contracts/otp"
 	"github.com/duykhanh/worklane/services/otp-api/internal/domain"
 )
 
@@ -24,11 +26,15 @@ func (f *fakeStore) Get(_ context.Context, k string) (CodeRecord, error) {
 }
 func (f *fakeStore) Delete(_ context.Context, k string) error { delete(f.m, k); return nil }
 
-type fakeRepo struct{ states map[string]string }
+type fakeRepo struct {
+	states     map[string]string
+	lastInsert Request
+}
 
 func newFakeRepo() *fakeRepo { return &fakeRepo{states: map[string]string{}} }
 func (f *fakeRepo) InsertRequest(_ context.Context, r Request) error {
 	f.states[r.ID] = r.State
+	f.lastInsert = r
 	return nil
 }
 func (f *fakeRepo) UpdateState(_ context.Context, id, to string) error {
@@ -42,10 +48,14 @@ func (f *fakeRepo) ListDeliveryLogs(context.Context, string, int) ([]DeliveryLog
 	return nil, nil
 }
 
-type fakePub struct{ events []string }
+type fakePub struct {
+	events []string
+	last   any
+}
 
-func (f *fakePub) Publish(_ context.Context, topic string, _ any) error {
+func (f *fakePub) Publish(_ context.Context, topic string, event any) error {
 	f.events = append(f.events, topic)
+	f.last = event
 	return nil
 }
 
@@ -82,6 +92,49 @@ func TestSend_ThenVerify_Success(t *testing.T) {
 	}
 	if repo.states[res.RequestID] != string(domain.StateVerified) {
 		t.Fatalf("request should be verified, got %q", repo.states[res.RequestID])
+	}
+}
+
+func TestSend_SMSChannel_PublishesSMSEvent(t *testing.T) {
+	svc, repo, pub := newSvc()
+	res, err := svc.Send(context.Background(), SendInput{
+		TenantID: "t1", Recipient: "+84901234567", Channel: "sms",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if res.RequestID == "" {
+		t.Fatal("expected a request id")
+	}
+	evt := pub.last.(contracts.RequestedEvent)
+	if evt.Channel != "sms" || evt.Recipient != "+84901234567" {
+		t.Fatalf("published event = %+v, want sms channel", evt)
+	}
+	if got := repo.lastInsert.Channel; got != "sms" {
+		t.Fatalf("audit row channel = %q, want sms", got)
+	}
+}
+
+func TestSend_PhoneUnderEmailChannel_Rejected(t *testing.T) {
+	svc, _, _ := newSvc()
+	_, err := svc.Send(context.Background(), SendInput{
+		TenantID: "t1", Recipient: "+84901234567", Channel: "email",
+	})
+	if !errors.Is(err, domain.ErrInvalidRecipient) {
+		t.Fatalf("want ErrInvalidRecipient, got %v", err)
+	}
+}
+
+func TestSend_OmittedChannel_DefaultsToEmail(t *testing.T) {
+	svc, _, pub := newSvc()
+	if _, err := svc.Send(context.Background(), SendInput{
+		TenantID: "t1", Recipient: "user@example.com", // no Channel
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	evt := pub.last.(contracts.RequestedEvent)
+	if evt.Channel != "email" {
+		t.Fatalf("default channel should be email, got %q", evt.Channel)
 	}
 }
 

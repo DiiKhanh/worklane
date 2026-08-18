@@ -63,7 +63,7 @@ func (r *Repo) InsertRequest(ctx context.Context, req app.Request) error {
 	row := otpRequestRow{
 		ID:              req.ID,
 		TenantID:        req.TenantID,
-		RecipientMasked: domain.MaskRecipient(req.Recipient),
+		RecipientMasked: domain.Mask(domain.Channel(req.Channel), req.Recipient),
 		Channel:         req.Channel,
 		State:           req.State,
 		CreatedAt:       req.CreatedAt,
