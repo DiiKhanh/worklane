@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Send, ShieldCheck } from "lucide-react";
 import { Panel } from "@/components/common/panel";
+import { LogoMark } from "@/components/shell/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,10 +22,7 @@ export function LoginView() {
     <div className="flex min-h-dvh items-center justify-center bg-background p-6">
       <div className="grid w-[380px] gap-5">
         <span className="flex items-center justify-center gap-2">
-          <span className="relative flex size-6 items-center justify-center">
-            <span className="absolute inset-0 rounded-[7px] bg-primary/20 blur-[2px]" />
-            <span className="relative size-2.5 rounded-full bg-primary" />
-          </span>
+          <LogoMark className="size-6" />
           <span className="text-[15px] font-semibold tracking-tight">
             worklane
           </span>

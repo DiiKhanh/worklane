@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Nav } from "./nav";
+import { LogoMark } from "./logo";
 import { TenantSwitcher } from "./tenant-switcher";
 
 export function Sidebar() {
@@ -7,10 +8,7 @@ export function Sidebar() {
     <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-sidebar md:flex">
       <div className="flex h-14 items-center px-5">
         <Link href="/" className="flex items-center gap-2 outline-none">
-          <span className="relative flex size-6 items-center justify-center">
-            <span className="absolute inset-0 rounded-[7px] bg-primary/20 blur-[2px]" />
-            <span className="relative size-2.5 rounded-full bg-primary" />
-          </span>
+          <LogoMark className="size-6" />
           <span className="text-[15px] font-semibold tracking-tight">
             worklane
           </span>
