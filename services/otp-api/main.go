@@ -20,6 +20,7 @@ import (
 	"github.com/duykhanh/worklane/pkg/platform/kafka"
 	"github.com/duykhanh/worklane/pkg/platform/mysql"
 	redisplatform "github.com/duykhanh/worklane/pkg/platform/redis"
+	"github.com/duykhanh/worklane/pkg/security"
 	otphttp "github.com/duykhanh/worklane/services/otp-api/internal/adapters/inbound/http"
 	"github.com/duykhanh/worklane/services/otp-api/internal/adapters/outbound/mysqlrepo"
 	"github.com/duykhanh/worklane/services/otp-api/internal/adapters/outbound/redisstore"
@@ -56,6 +57,15 @@ func main() {
 	}
 	defer func() { _ = prod.Close() }()
 
+	pub := config.Env("AUTH_JWT_PUBLIC_KEY", "")
+	if pub == "" {
+		log.Fatal("otp-api: AUTH_JWT_PUBLIC_KEY is required")
+	}
+	verifier, err := security.NewVerifier(pub)
+	if err != nil {
+		log.Fatalf("otp-api: verifier: %v", err)
+	}
+
 	// Adapters implement the ports; store is both CodeStore and Counter.
 	repo := mysqlrepo.New(db)
 	store := redisstore.New(rc)
@@ -78,7 +88,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              httpAddr,
-		Handler:           otphttp.NewRouter(svc, repo),
+		Handler:           otphttp.NewRouter(svc, repo, verifier),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
