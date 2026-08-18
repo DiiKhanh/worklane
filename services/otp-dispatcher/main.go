@@ -22,6 +22,7 @@ import (
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/mysqlrepo"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/resendmail"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/smtpmail"
+	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/twiliosms"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/app"
 )
 
@@ -37,6 +38,11 @@ func main() {
 	resendKey := config.Env("RESEND_API_KEY", "")
 	resendFrom := config.Env("RESEND_FROM", "OTP <otp@worklane.dev>")
 	resendBase := config.Env("RESEND_BASE_URL", "https://api.resend.com")
+	twilioSID := config.Env("TWILIO_ACCOUNT_SID", "")
+	twilioToken := config.Env("TWILIO_AUTH_TOKEN", "")
+	twilioFrom := config.Env("TWILIO_FROM", "")
+	twilioBase := config.Env("TWILIO_BASE_URL", "https://api.twilio.com")
+	smsBodyFmt := config.Env("OTP_SMS_BODY_FMT", "Your verification code is %s. It expires in 5 minutes.")
 
 	db, err := mysql.Open(dsn)
 	if err != nil {
@@ -65,17 +71,25 @@ func main() {
 	}
 	repo := mysqlrepo.New(db)
 
+	sms := twiliosms.New(twilioSID, twilioToken, twilioFrom, twilioBase, &http.Client{Timeout: 10 * time.Second})
+
+	emailTpl := app.Template{
+		Subject: config.Env("OTP_EMAIL_SUBJECT", "Your verification code"),
+		BodyFmt: config.Env("OTP_EMAIL_BODY", "Your verification code is %s. It expires in 5 minutes."),
+	}
+
 	handler := app.NewHandler(app.Deps{
-		Mail: mail, Repo: repo, Pub: prod, Clock: realClock{},
-	}, app.Config{
-		SentTopic:    config.Env("KAFKA_TOPIC_SENT", "otp.sent"),
-		FailedTopic:  config.Env("KAFKA_TOPIC_FAILED", "otp.failed"),
-		DLQTopic:     config.Env("KAFKA_TOPIC_DLQ", "otp.dlq"),
-		ProviderName: providerLabel,
-		Template: app.Template{
-			Subject: config.Env("OTP_EMAIL_SUBJECT", "Your verification code"),
-			BodyFmt: config.Env("OTP_EMAIL_BODY", "Your verification code is %s. It expires in 5 minutes."),
+		Senders: map[string]app.Sender{
+			"email": app.NewEmailSender(mail, providerLabel, emailTpl),
+			"sms":   app.NewSMSSender(sms, "twilio", smsBodyFmt),
 		},
+		Repo:  repo,
+		Pub:   prod,
+		Clock: realClock{},
+	}, app.Config{
+		SentTopic:   config.Env("KAFKA_TOPIC_SENT", "otp.sent"),
+		FailedTopic: config.Env("KAFKA_TOPIC_FAILED", "otp.failed"),
+		DLQTopic:    config.Env("KAFKA_TOPIC_DLQ", "otp.dlq"),
 	})
 
 	cons, err := kafka.NewConsumer(brokers, group, requestedTopic, consumer.New(handler).Handle)
