@@ -15,7 +15,7 @@ export function Sidebar() {
         </Link>
       </div>
 
-      <div className="mt-2 flex-1">
+      <div className="mt-2 flex-1 overflow-y-auto">
         <p className="px-5 pb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           Platform
         </p>
