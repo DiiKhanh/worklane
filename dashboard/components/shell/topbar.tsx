@@ -3,8 +3,11 @@
 import { usePathname } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
+import { ApiKeyField } from "./api-key-field";
 import { NAV_ITEMS } from "./nav";
 import { Button } from "@/components/ui/button";
+
+const IS_LIVE = process.env.NEXT_PUBLIC_DATA_SOURCE === "live";
 
 function titleFor(pathname: string): string {
   const match = NAV_ITEMS.find((i) =>
@@ -38,6 +41,7 @@ export function Topbar() {
         {titleFor(pathname)}
       </h1>
       <div className="ml-auto flex items-center gap-2">
+        {IS_LIVE && <ApiKeyField />}
         <DataSourceBadge />
         <Button
           variant="ghost"

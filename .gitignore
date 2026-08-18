@@ -1,0 +1,11 @@
+# Local environment / secrets (never commit real credentials)
+.env
+.env.local
+.env.*.local
+deploy/compose/.env
+
+# Go
+cover.out
+
+# OS
+.DS_Store
