@@ -50,7 +50,9 @@ func (f *fakeRepo) ListDeliveryLogs(context.Context, string, int) ([]app.Deliver
 }
 
 func newServer(svc otphttp.OTPService, repo app.Repo) http.Handler {
-	return otphttp.NewRouter(svc, repo)
+	// These tests authenticate with an API key (opaque, no dots), which never reaches the
+	// JWT branch, so a nil verifier is sufficient here.
+	return otphttp.NewRouter(svc, repo, nil)
 }
 
 const testKey = "testkey"
