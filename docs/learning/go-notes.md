@@ -315,3 +315,52 @@ code; every entry points at a real file.
   then drives the HTTP flow through Traefik and reads the code back from MailHog's search API. One
   command (`go test -tags=e2e ./test/e2e/`) proves the entire thread works, deterministically.
 
+## Phase 5 - a second channel (SMS via Twilio)
+
+### 31. Generalizing one provider into a registry of senders (`app/sender.go`, `app/handler.go`)
+
+- The dispatcher started email-only: the handler called `Mail.Send(...)` directly. Adding SMS without
+  an `if channel == "sms"` sprawl meant introducing a **`Sender` port** (`Name()` + `Send(ctx, to, code)`)
+  and a **registry** `map[string]Sender` keyed by channel. The handler now does `senders[evt.Channel]`
+  and stays channel-agnostic - adding push later is one map entry, not a new branch.
+- Key design choice: **each Sender renders its own message**. `emailSender` wraps `EmailProvider` + the
+  subject/body `Template`; `smsSender` wraps `SMSProvider` + a body-only format. The handler passes only
+  `(to, code)` and never learns that email has a subject and SMS does not. This is the difference between
+  a registry that *routes* and one that *leaks* per-channel shape back into the caller.
+- `Config` shrank: `ProviderName` and `Template` moved **into** the senders (each owns its own label +
+  template), leaving `Config` with just the three Kafka topics. When a field only makes sense per-strategy,
+  it belongs on the strategy, not on the shared config.
+
+### 32. Where a decision lives is an architecture decision (ties to #12, #23)
+
+- Two new decisions, two different layers, on purpose:
+  - **Recipient format** (email vs E.164 phone) is a *domain* rule → `domain.ValidateRecipient(channel, recipient)`.
+  - **What HTTP status a bad recipient returns** (400) is a *transport* rule → the `statusFor` switch in
+    `http/errors.go`, the same single mapping that already turned rate-limit into 429.
+- This is also the answer to "why does Gin appear in only 4 files?" Gin is a transport detail, so it is
+  confined to the inbound HTTP adapter (`adapters/inbound/http/`): `router.go` (`gin.Engine`),
+  `middleware.go` + `handlers.go` + `errors.go` (`gin.Context`). The 5th file there, `dto.go`, is plain
+  structs and imports no Gin. `domain/` and `app/` must never import it - and `arch/arch_test.go` fails
+  the build if they do. SMS therefore travels through the `Send/Verify` ports, never a `gin.Context`.
+
+### 33. Reusing the httptest pattern for a second HTTP client (`twiliosms/provider_test.go`, ties to #20)
+
+- The Twilio adapter is a near-copy of `resendmail`'s shape: inject `baseURL` so a test points it at an
+  `httptest` stub, return the provider's message id, error on any non-2xx. The *contract* differs though -
+  Twilio is **form-encoded + HTTP Basic auth** to `/2010-04-01/Accounts/{SID}/Messages.json`, where Resend
+  is **JSON + bearer**. Same testing seam, different wire format; the port hides both from the handler.
+- Twilio's **test credentials + magic numbers** (e.g. `+15005550006` = "valid") let the whole thread be
+  exercised without sending a real SMS or paying - the SMS analogue of MailHog for email (#29).
+
+### 34. Designing the extension point in from day one (`pkg/contracts/otp`)
+
+- The `RequestedEvent` already carried a `Channel` field before SMS existed; the producer just hard-coded
+  `"email"`. Adding SMS meant **stopping the hard-code**, not changing the wire contract - no new topic, no
+  new event shape, both services already agreed on the field. Cheap extension is usually paid for earlier,
+  in the contract.
+- **Backward compatibility** fell out for free: an omitted `channel` defaults to `email` in the use case,
+  so every existing caller keeps working unchanged - proven by a regression test, not by hope.
+- **Defensive routing:** an unknown channel at the dispatcher is treated as a terminal failure → delivery
+  logged failed + routed to the DLQ, `return nil` so Kafka does not redeliver. A new producer bug surfaces
+  as a dead-lettered event to inspect, never an infinite redelivery loop.
+

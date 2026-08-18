@@ -127,3 +127,26 @@ sync/async split is the strongest distributed-systems story in the project.
 - No seed CLI to mint an API key, and no dashboard. That is Phase 5.
 
 Everything above is written and tested in isolation; Phase 4 is where it first breathes as one system.
+
+## 6. Epilogue: how this shape paid off when SMS arrived (Phase 5)
+
+Adding a whole second delivery channel (SMS via Twilio) touched **no** domain rule about codes, no
+Kafka topic, and no `gin.Context` outside the HTTP adapter. That is the hexagon working as advertised:
+
+- **The event contract already had the seam.** `RequestedEvent.Channel` existed from day one; the
+  producer had just hard-coded `"email"`. SMS meant *un*-hard-coding it - the wire contract between the
+  two services never changed.
+- **The dispatcher generalized behind a port.** The single `EmailProvider` call became a `Sender`
+  registry keyed by channel (`map[string]Sender`); the handler routes by `evt.Channel` and stays
+  ignorant of subjects vs bodies because each sender renders its own message. Adding push later is one
+  more map entry.
+- **The new provider reused the same testing seam** as `resendmail` (§2/§3 of go-notes #20/#33): a
+  Twilio adapter with an injected `baseURL` and an `httptest` stub - just form-encoded + Basic auth
+  instead of JSON + bearer.
+- **Decisions stayed in their layer.** "Is this recipient a valid phone?" is a domain rule; "what
+  status does a bad recipient return?" (400) is the transport mapping in `http/errors.go` - the same
+  single switch that maps rate-limit to 429. Nothing about HTTP leaked inward.
+
+The lesson: the sync/async split and the ports discipline from Phase 2-3 are exactly what made a
+seemingly large feature ("a new channel") a small, well-bounded change. The full SMS design and plan
+live in `docs/superpowers/specs/2026-08-18-sms-channel-design.md` and the matching plan.
