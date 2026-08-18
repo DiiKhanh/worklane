@@ -57,7 +57,7 @@ func main() {
 	}
 	defer func() { _ = prod.Close() }()
 
-	pub := config.Env("AUTH_JWT_PUBLIC_KEY", "")
+	pub := config.EnvOrFile("AUTH_JWT_PUBLIC_KEY", "")
 	if pub == "" {
 		log.Fatal("otp-api: AUTH_JWT_PUBLIC_KEY is required")
 	}

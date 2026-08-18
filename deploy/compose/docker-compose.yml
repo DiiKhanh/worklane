@@ -64,10 +64,33 @@ services:
       REDIS_URL: "redis://redis:6379/0"
       KAFKA_BROKERS: "redpanda:9092"
       HTTP_ADDR: ":8888"
+      # otp-api only verifies JWTs, so it gets the public key (mounted, not committed).
+      AUTH_JWT_PUBLIC_KEY_FILE: "/secrets/auth_pub.pem"
+    volumes:
+      - "./secrets:/secrets:ro"
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
       redpanda: { condition: service_healthy }
+
+  auth-svc:
+    build:
+      context: ../..
+      dockerfile: services/auth-svc/Dockerfile
+    environment:
+      MYSQL_DSN: "root:secret@tcp(mysql:3306)/otp?parseTime=true&multiStatements=true"
+      REDIS_URL: "redis://redis:6379/0"
+      HTTP_ADDR: ":8889"
+      AUTH_TOKEN_TTL: "1h"
+      # Signing keypair mounted from ./secrets (gitignored); prod supplies its own.
+      AUTH_JWT_PRIVATE_KEY_FILE: "/secrets/auth_priv.pem"
+      AUTH_JWT_PUBLIC_KEY_FILE: "/secrets/auth_pub.pem"
+    volumes:
+      - "./secrets:/secrets:ro"
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      otp-api: { condition: service_started } # otp-api owns migrations incl. the users table
 
   otp-dispatcher:
     build:

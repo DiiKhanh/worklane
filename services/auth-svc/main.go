@@ -33,8 +33,8 @@ func (realClock) Now() time.Time { return time.Now() }
 func main() {
 	dsn := config.Env("MYSQL_DSN", "root:secret@tcp(localhost:3306)/otp?parseTime=true&multiStatements=true")
 	redisURL := config.Env("REDIS_URL", "redis://localhost:6379/0")
-	priv := config.Env("AUTH_JWT_PRIVATE_KEY", "")
-	pub := config.Env("AUTH_JWT_PUBLIC_KEY", "")
+	priv := config.EnvOrFile("AUTH_JWT_PRIVATE_KEY", "")
+	pub := config.EnvOrFile("AUTH_JWT_PUBLIC_KEY", "")
 	ttl := config.EnvDuration("AUTH_TOKEN_TTL", time.Hour)
 	httpAddr := config.Env("HTTP_ADDR", ":8889")
 
