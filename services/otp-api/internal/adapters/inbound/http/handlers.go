@@ -37,6 +37,7 @@ func (h *Handlers) Send(c *gin.Context) {
 	res, err := h.svc.Send(c.Request.Context(), app.SendInput{
 		TenantID:       c.GetString(tenantCtxKey),
 		Recipient:      body.Recipient,
+		Channel:        body.Channel,
 		IdempotencyKey: c.GetHeader("Idempotency-Key"),
 	})
 	if err != nil {

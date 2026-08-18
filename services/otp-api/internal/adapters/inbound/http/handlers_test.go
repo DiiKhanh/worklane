@@ -20,9 +20,11 @@ type fakeSvc struct {
 	sendErr   error
 	verifyErr error
 	sendRes   app.SendResult
+	lastInput app.SendInput
 }
 
-func (f *fakeSvc) Send(context.Context, app.SendInput) (app.SendResult, error) {
+func (f *fakeSvc) Send(_ context.Context, in app.SendInput) (app.SendResult, error) {
+	f.lastInput = in
 	return f.sendRes, f.sendErr
 }
 func (f *fakeSvc) Verify(context.Context, app.VerifyInput) error { return f.verifyErr }
@@ -80,6 +82,27 @@ func TestSend_ValidKey_Returns202(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &out)
 	if out["request_id"] != "r1" {
 		t.Fatalf("want request_id r1, got %v", out)
+	}
+}
+
+func TestSend_SMSChannel_202(t *testing.T) {
+	svc := &fakeSvc{sendRes: app.SendResult{RequestID: "r1"}}
+	h := newServer(svc, validRepo())
+	rr := do(t, h, "POST", "/v1/otp/send", testKey, `{"recipient":"+84901234567","channel":"sms"}`)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("want 202, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if svc.lastInput.Channel != "sms" {
+		t.Fatalf("service got channel %q, want sms", svc.lastInput.Channel)
+	}
+}
+
+func TestSend_InvalidRecipient_400(t *testing.T) {
+	svc := &fakeSvc{sendErr: domain.ErrInvalidRecipient}
+	h := newServer(svc, validRepo())
+	rr := do(t, h, "POST", "/v1/otp/send", testKey, `{"recipient":"+84901234567","channel":"email"}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rr.Code)
 	}
 }
 
