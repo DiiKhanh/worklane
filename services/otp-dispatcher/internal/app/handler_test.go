@@ -9,12 +9,16 @@ import (
 	contracts "github.com/duykhanh/worklane/pkg/contracts/otp"
 )
 
-type fakeMail struct {
-	id  string
-	err error
+type fakeSender struct {
+	name string
+	id   string
+	err  error
+	sent int
 }
 
-func (f *fakeMail) Send(context.Context, string, string, string) (string, error) {
+func (f *fakeSender) Name() string { return f.name }
+func (f *fakeSender) Send(context.Context, string, string) (string, error) {
+	f.sent++
 	return f.id, f.err
 }
 
@@ -44,12 +48,11 @@ type fixedClock struct{ t time.Time }
 
 func (c fixedClock) Now() time.Time { return c.t }
 
-func newHandler(mail EmailProvider) (*Handler, *fakeRepo, *fakePub) {
+func newHandler(senders map[string]Sender) (*Handler, *fakeRepo, *fakePub) {
 	repo := newFakeRepo()
 	pub := &fakePub{}
-	h := NewHandler(Deps{Mail: mail, Repo: repo, Pub: pub, Clock: fixedClock{t: time.Unix(0, 0)}}, Config{
-		SentTopic: "otp.sent", FailedTopic: "otp.failed", DLQTopic: "otp.dlq", ProviderName: "smtp",
-		Template: Template{Subject: "Code", BodyFmt: "Your code is %s"},
+	h := NewHandler(Deps{Senders: senders, Repo: repo, Pub: pub, Clock: fixedClock{t: time.Unix(0, 0)}}, Config{
+		SentTopic: "otp.sent", FailedTopic: "otp.failed", DLQTopic: "otp.dlq",
 	})
 	return h, repo, pub
 }
@@ -58,8 +61,12 @@ func evt() contracts.RequestedEvent {
 	return contracts.RequestedEvent{RequestID: "r1", TenantID: "t1", Recipient: "a@b.co", Channel: "email", Code: "123456"}
 }
 
+func smsEvt() contracts.RequestedEvent {
+	return contracts.RequestedEvent{RequestID: "r2", TenantID: "t1", Recipient: "+84901234567", Channel: "sms", Code: "123456"}
+}
+
 func TestHandle_Success(t *testing.T) {
-	h, repo, pub := newHandler(&fakeMail{id: "msg-1"})
+	h, repo, pub := newHandler(map[string]Sender{"email": &fakeSender{name: "smtp", id: "msg-1"}})
 	if err := h.Handle(context.Background(), evt()); err != nil {
 		t.Fatalf("handle: %v", err)
 	}
@@ -77,8 +84,41 @@ func TestHandle_Success(t *testing.T) {
 	}
 }
 
+func TestHandle_RoutesToChannelSender(t *testing.T) {
+	email := &fakeSender{name: "resend", id: "e-1"}
+	sms := &fakeSender{name: "twilio", id: "s-1"}
+	h, repo, pub := newHandler(map[string]Sender{"email": email, "sms": sms})
+
+	if err := h.Handle(context.Background(), smsEvt()); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if sms.sent != 1 || email.sent != 0 {
+		t.Fatalf("sms event must go to the sms sender only (sms=%d email=%d)", sms.sent, email.sent)
+	}
+	if repo.logs[0].Provider != "twilio" {
+		t.Fatalf("delivery log provider = %q, want twilio", repo.logs[0].Provider)
+	}
+	if pub.topics[0] != "otp.sent" {
+		t.Fatalf("want otp.sent, got %v", pub.topics)
+	}
+}
+
+func TestHandle_UnknownChannel_DLQ(t *testing.T) {
+	h, repo, pub := newHandler(map[string]Sender{"email": &fakeSender{name: "resend"}})
+	bad := contracts.RequestedEvent{RequestID: "r3", TenantID: "t1", Recipient: "x", Channel: "push", Code: "1"}
+	if err := h.Handle(context.Background(), bad); err != nil {
+		t.Fatalf("unknown channel must be swallowed to DLQ: %v", err)
+	}
+	if repo.states["r3"] != contracts.StateFailed {
+		t.Fatalf("state = %q, want failed", repo.states["r3"])
+	}
+	if len(pub.topics) != 2 || pub.topics[0] != "otp.failed" || pub.topics[1] != "otp.dlq" {
+		t.Fatalf("want failed then dlq, got %v", pub.topics)
+	}
+}
+
 func TestHandle_MailFailure_LogsFailedAndDLQ(t *testing.T) {
-	h, repo, pub := newHandler(&fakeMail{err: errors.New("provider down")})
+	h, repo, pub := newHandler(map[string]Sender{"email": &fakeSender{name: "smtp", err: errors.New("provider down")}})
 	if err := h.Handle(context.Background(), evt()); err != nil {
 		t.Fatalf("handle should swallow a provider failure (routed to DLQ): %v", err)
 	}
