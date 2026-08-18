@@ -1,15 +1,16 @@
 "use client";
 
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence, motion } from "motion/react";
 import { ShieldCheck } from "lucide-react";
-import { verifySchema, type VerifyValues } from "@/lib/schemas";
+import { verifySchema, type VerifyValues, type Channel } from "@/lib/schemas";
 import type { VerifyOutcome } from "@/lib/api/types";
 import { useVerify } from "@/lib/queries/use-otp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PhoneInput } from "@/components/common/phone-input";
 
 const OUTCOME: Record<VerifyOutcome, { label: string; color: string }> = {
   verified: { label: "Verified", color: "var(--state-verified)" },
@@ -19,17 +20,20 @@ const OUTCOME: Record<VerifyOutcome, { label: string; color: string }> = {
 };
 
 export function VerifyForm({
+  channel,
   initial,
 }: {
+  channel: Channel;
   initial?: { recipient: string; code: string };
 }) {
   const verify = useVerify();
   const {
+    control,
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<VerifyValues>({
-    resolver: zodResolver(verifySchema),
+    resolver: zodResolver(verifySchema(channel)),
     defaultValues: {
       recipient: initial?.recipient ?? "",
       code: initial?.code ?? "",
@@ -37,21 +41,37 @@ export function VerifyForm({
   });
 
   const onSubmit = handleSubmit((values) =>
-    verify.mutate({ recipient: values.recipient, code: values.code }),
+    verify.mutate({ recipient: values.recipient, code: values.code, channel }),
   );
   const outcome = verify.data ? OUTCOME[verify.data.status] : null;
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-1.5">
-        <Label htmlFor="verify-recipient">Recipient email</Label>
-        <Input
-          id="verify-recipient"
-          placeholder="user@example.com"
-          autoComplete="off"
-          aria-invalid={!!errors.recipient}
-          {...register("recipient")}
-        />
+        <Label htmlFor="verify-recipient">
+          {channel === "sms" ? "Recipient phone" : "Recipient email"}
+        </Label>
+        {channel === "sms" ? (
+          <Controller
+            control={control}
+            name="recipient"
+            render={({ field }) => (
+              <PhoneInput
+                id="verify-recipient"
+                value={field.value ?? ""}
+                onChange={field.onChange}
+              />
+            )}
+          />
+        ) : (
+          <Input
+            id="verify-recipient"
+            placeholder="user@example.com"
+            autoComplete="off"
+            aria-invalid={!!errors.recipient}
+            {...register("recipient")}
+          />
+        )}
         {errors.recipient && (
           <p className="text-xs text-destructive">{errors.recipient.message}</p>
         )}

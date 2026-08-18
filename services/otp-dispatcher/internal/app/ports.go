@@ -14,6 +14,18 @@ type EmailProvider interface {
 	Send(ctx context.Context, to, subject, body string) (providerMsgID string, err error)
 }
 
+// SMSProvider sends one text message and returns the provider's message id.
+type SMSProvider interface {
+	Send(ctx context.Context, to, body string) (providerMsgID string, err error)
+}
+
+// Sender renders and delivers one OTP over a specific channel. Name is recorded on the
+// delivery log as the provider label.
+type Sender interface {
+	Name() string
+	Send(ctx context.Context, to, code string) (msgID string, err error)
+}
+
 // DeliveryLog is one provider attempt, written for the dashboard/audit.
 type DeliveryLog struct {
 	RequestID     string

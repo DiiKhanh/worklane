@@ -16,6 +16,6 @@ export interface DataSource {
   listRequests(): Promise<OtpRequest[]>;
   listLogs(): Promise<DeliveryLog[]>;
   getOverview(): Promise<Overview>;
-  send(recipient: string): Promise<SendResult>;
-  verify(recipient: string, code: string): Promise<VerifyResult>;
+  send(recipient: string, channel: string): Promise<SendResult>;
+  verify(recipient: string, code: string, channel?: string): Promise<VerifyResult>;
 }

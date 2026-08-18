@@ -31,6 +31,8 @@ func statusFor(err error) int {
 		return http.StatusUnauthorized // 401
 	case errors.Is(err, domain.ErrNotFound), errors.Is(err, domain.ErrExpired):
 		return http.StatusGone // 410 - the code existed conceptually but is no longer usable
+	case errors.Is(err, domain.ErrInvalidRecipient), errors.Is(err, domain.ErrInvalidChannel):
+		return http.StatusBadRequest // 400 - malformed request
 	default:
 		return http.StatusInternalServerError // 500
 	}

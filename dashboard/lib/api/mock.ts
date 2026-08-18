@@ -186,12 +186,24 @@ export class MockDataSource implements DataSource {
     return computeOverview(this.fixtures, this.t0);
   }
 
-  async send(recipient: string): Promise<SendResult> {
+  async send(recipient: string, channel: string): Promise<SendResult> {
     await this.latency();
     const r = rng((Date.now() ^ recipient.length) >>> 0);
     const code = String(100000 + Math.floor(r() * 900000));
     this.codes.set(recipient.toLowerCase(), code);
-    return { requestId: shortId("req", r), devCode: code };
+    const id = shortId("req", r);
+    const masked =
+      channel === "sms"
+        ? recipient.replace(/^(\+\d{2})\d+(\d{2})$/, "$1***$2")
+        : mask(recipient);
+    this.fixtures.requests.unshift({
+      id,
+      recipient: masked,
+      channel,
+      state: "sent",
+      createdAt: iso(this.now()),
+    });
+    return { requestId: id, devCode: code };
   }
 
   async verify(recipient: string, code: string): Promise<VerifyResult> {

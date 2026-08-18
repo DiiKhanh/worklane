@@ -4,7 +4,8 @@ package http
 // at the boundary - a bad body is rejected with 400 before any use case runs.
 
 type sendRequest struct {
-	Recipient string `json:"recipient" binding:"required,email"`
+	Recipient string `json:"recipient" binding:"required"`
+	Channel   string `json:"channel"`
 }
 
 type sendResponse struct {
@@ -12,7 +13,7 @@ type sendResponse struct {
 }
 
 type verifyRequest struct {
-	Recipient string `json:"recipient" binding:"required,email"`
+	Recipient string `json:"recipient" binding:"required"`
 	Code      string `json:"code" binding:"required"`
 }
 

@@ -12,18 +12,25 @@ describe("MockDataSource", () => {
 
   it("send returns a request id and a 6-digit dev code", async () => {
     const ds = new MockDataSource();
-    const r = await ds.send("dev@worklane.io");
+    const r = await ds.send("dev@worklane.io", "email");
     expect(r.requestId).toBeTruthy();
     expect(r.devCode).toMatch(/^\d{6}$/);
   });
 
   it("verify matches the code from a prior send", async () => {
     const ds = new MockDataSource();
-    const sent = await ds.send("dev@worklane.io");
+    const sent = await ds.send("dev@worklane.io", "email");
     const good = await ds.verify("dev@worklane.io", sent.devCode!);
     expect(good).toEqual({ ok: true, status: "verified" });
     const bad = await ds.verify("dev@worklane.io", "000000");
     expect(bad.ok).toBe(false);
+  });
+
+  it("send records the chosen channel on the request", async () => {
+    const ds = new MockDataSource();
+    await ds.send("+84901234567", "sms");
+    const requests = await ds.listRequests();
+    expect(requests.some((r) => r.channel === "sms")).toBe(true);
   });
 
   it("progresses delivery logs over time (rows appear as they are sent)", async () => {

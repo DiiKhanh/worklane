@@ -1,46 +1,68 @@
 "use client";
 
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence, motion } from "motion/react";
 import { Send, ArrowRight } from "lucide-react";
-import { sendSchema, type SendValues } from "@/lib/schemas";
+import { sendSchema, type SendValues, type Channel } from "@/lib/schemas";
 import { useSend } from "@/lib/queries/use-otp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CopyButton } from "@/components/common/copy-button";
+import { PhoneInput } from "@/components/common/phone-input";
 
 export function SendForm({
+  channel,
   onSent,
 }: {
+  channel: Channel;
   onSent?: (recipient: string, code: string) => void;
 }) {
   const send = useSend();
   const {
+    control,
     register,
     handleSubmit,
     getValues,
     formState: { errors },
   } = useForm<SendValues>({
-    resolver: zodResolver(sendSchema),
+    resolver: zodResolver(sendSchema(channel)),
     defaultValues: { recipient: "" },
   });
 
-  const onSubmit = handleSubmit((values) => send.mutate(values.recipient));
+  const onSubmit = handleSubmit((values) =>
+    send.mutate({ recipient: values.recipient, channel }),
+  );
   const result = send.data;
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-1.5">
-        <Label htmlFor="send-recipient">Recipient email</Label>
-        <Input
-          id="send-recipient"
-          placeholder="user@example.com"
-          autoComplete="off"
-          aria-invalid={!!errors.recipient}
-          {...register("recipient")}
-        />
+        <Label htmlFor="send-recipient">
+          {channel === "sms" ? "Recipient phone" : "Recipient email"}
+        </Label>
+        {channel === "sms" ? (
+          <Controller
+            control={control}
+            name="recipient"
+            render={({ field }) => (
+              <PhoneInput
+                id="send-recipient"
+                value={field.value ?? ""}
+                onChange={field.onChange}
+              />
+            )}
+          />
+        ) : (
+          <Input
+            id="send-recipient"
+            placeholder="user@example.com"
+            autoComplete="off"
+            aria-invalid={!!errors.recipient}
+            {...register("recipient")}
+          />
+        )}
         {errors.recipient && (
           <p className="text-xs text-destructive">{errors.recipient.message}</p>
         )}
