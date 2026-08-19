@@ -202,6 +202,10 @@ Both branches set `tenant_id` in context; downstream handlers are unchanged.
 
 ## 6. Delivery in two milestones
 
+**Status: M1 shipped; M2 shipped** (identity DB split, `api_keys` moved to auth-svc,
+otp-api resolves keys via introspection). Plan:
+`docs/superpowers/plans/2026-08-19-dashboard-auth-m2.md`.
+
 To ship the immediate value without a big-bang migration:
 
 - **M1 (removes paste-key):** stand up auth-svc with `tenants`+`users`+login+JWT; otp-api
