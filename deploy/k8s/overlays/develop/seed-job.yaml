@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed
+  namespace: worklane
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: seed
+          image: ghcr.io/duykhanh/worklane-seed:latest
+          args: ["--name", "demo", "--email", "you@demo.co", "--password", "changeme-now"]
+          env:
+            - name: MYSQL_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: worklane-secrets
+                  key: IDENTITY_MYSQL_DSN
