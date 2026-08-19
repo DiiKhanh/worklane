@@ -5,8 +5,16 @@ package app
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+var ErrInvalidAPIKey = errors.New("invalid api key")
+
+// Introspector resolves an opaque API key to a tenant via auth-svc.
+type Introspector interface {
+	Introspect(ctx context.Context, apiKey string) (tenantID string, err error)
+}
 
 // CodeRecord is what the CodeStore keeps in Redis for an active OTP: the salted hash,
 // the salt (which equals the request id), and the running verify-attempt count. The
@@ -25,13 +33,6 @@ type DeliveryLog struct {
 	Status        string
 	LatencyMillis int64
 	Error         string
-}
-
-// APIKey is the resolved tenant credential looked up from a hashed key.
-type APIKey struct {
-	ID       string
-	TenantID string
-	Status   string
 }
 
 // Request is the app-layer view of an otp_requests row, decoupled from the domain
@@ -66,8 +67,6 @@ type Counter interface {
 type Repo interface {
 	InsertRequest(ctx context.Context, r Request) error
 	UpdateState(ctx context.Context, id, to string) error
-	FindAPIKey(ctx context.Context, hashedKey string) (APIKey, error)
-	ListAPIKeys(ctx context.Context, tenantID string) ([]APIKey, error)
 	ListRequests(ctx context.Context, tenantID string, limit int) ([]Request, error)
 	ListDeliveryLogs(ctx context.Context, tenantID string, limit int) ([]DeliveryLog, error)
 }

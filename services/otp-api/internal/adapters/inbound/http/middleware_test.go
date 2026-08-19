@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,27 +15,21 @@ import (
 	"github.com/duykhanh/worklane/services/otp-api/internal/app"
 )
 
-// stubRepo satisfies the full app.Repo interface; only FindAPIKey is exercised here.
-type stubRepo struct {
-	ak  app.APIKey
-	err error
+// stubIntrospector stands in for the identity client: the opaque-key branch calls it
+// instead of reaching auth-svc.
+type stubIntrospector struct {
+	tenant string
+	err    error
 }
 
-func (s stubRepo) FindAPIKey(context.Context, string) (app.APIKey, error) { return s.ak, s.err }
-func (stubRepo) InsertRequest(context.Context, app.Request) error         { return nil }
-func (stubRepo) UpdateState(context.Context, string, string) error        { return nil }
-func (stubRepo) ListAPIKeys(context.Context, string) ([]app.APIKey, error) { return nil, nil }
-func (stubRepo) ListRequests(context.Context, string, int) ([]app.Request, error) {
-	return nil, nil
-}
-func (stubRepo) ListDeliveryLogs(context.Context, string, int) ([]app.DeliveryLog, error) {
-	return nil, nil
+func (s stubIntrospector) Introspect(context.Context, string) (string, error) {
+	return s.tenant, s.err
 }
 
-func testRouter(v *security.Verifier, repo app.Repo) *gin.Engine {
+func testRouter(v *security.Verifier, intro app.Introspector) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.GET("/probe", authenticate(v, repo), func(c *gin.Context) {
+	r.GET("/probe", authenticate(v, intro), func(c *gin.Context) {
 		c.String(http.StatusOK, c.GetString(tenantCtxKey))
 	})
 	return r
@@ -46,7 +41,7 @@ func TestAuthenticate_ValidJWT(t *testing.T) {
 	ver, _ := security.NewVerifier(pub)
 	tok, _, _ := iss.Issue("u1", "tenant-jwt", "a@b.co", time.Now())
 
-	r := testRouter(ver, stubRepo{})
+	r := testRouter(ver, stubIntrospector{})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/probe", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -58,11 +53,7 @@ func TestAuthenticate_ValidJWT(t *testing.T) {
 }
 
 func TestAuthenticate_ValidAPIKey(t *testing.T) {
-	_, pub := securitytest.KeyPair(t)
-	ver, _ := security.NewVerifier(pub)
-	repo := stubRepo{ak: app.APIKey{TenantID: "tenant-key", Status: "active"}}
-
-	r := testRouter(ver, repo)
+	r := testRouter(nil, stubIntrospector{tenant: "tenant-key"})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/probe", nil)
 	req.Header.Set("Authorization", "Bearer opaque-key-no-dots")
@@ -73,15 +64,34 @@ func TestAuthenticate_ValidAPIKey(t *testing.T) {
 	}
 }
 
-func TestAuthenticate_Garbage401(t *testing.T) {
-	_, pub := securitytest.KeyPair(t)
-	ver, _ := security.NewVerifier(pub)
-	r := testRouter(ver, stubRepo{err: context.DeadlineExceeded})
+func TestAuthenticate_InvalidAPIKey_401(t *testing.T) {
+	r := testRouter(nil, stubIntrospector{err: app.ErrInvalidAPIKey})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/probe", nil)
-	req.Header.Set("Authorization", "Bearer nonsense")
+	req.Header.Set("Authorization", "Bearer bad-key")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("want 401, got %d", w.Code)
+		t.Fatalf("want 401 for unknown/revoked key, got %d", w.Code)
+	}
+}
+
+func TestAuthenticate_IntrospectDown_503(t *testing.T) {
+	r := testRouter(nil, stubIntrospector{err: errors.New("connection refused")})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/probe", nil)
+	req.Header.Set("Authorization", "Bearer whatever")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503 when identity service errors, got %d", w.Code)
+	}
+}
+
+func TestAuthenticate_MissingCredentials_401(t *testing.T) {
+	r := testRouter(nil, stubIntrospector{})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/probe", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 without Authorization, got %d", w.Code)
 	}
 }

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -14,9 +15,10 @@ import (
 const tenantCtxKey = "tenant_id"
 
 // authenticate resolves a Bearer token that is either a user JWT (dashboard) or a tenant
-// API key (machine). A JWT has three dot-separated parts; anything else is treated as an
-// opaque API key and looked up by hash. Both paths set tenant_id for downstream handlers.
-func authenticate(v *security.Verifier, repo app.Repo) gin.HandlerFunc {
+// API key (machine). A JWT has three dot-separated parts and is verified locally with the
+// public key. Anything else is an opaque API key, resolved by asking the identity service
+// (introspection, Redis-cached). Both paths set tenant_id for downstream handlers.
+func authenticate(v *security.Verifier, intro app.Introspector) gin.HandlerFunc {
 	const prefix = "Bearer "
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
@@ -37,12 +39,18 @@ func authenticate(v *security.Verifier, repo app.Repo) gin.HandlerFunc {
 			return
 		}
 
-		ak, err := repo.FindAPIKey(c.Request.Context(), security.HashKey(token))
-		if err != nil || ak.Status != "active" {
+		tenantID, err := intro.Introspect(c.Request.Context(), token)
+		switch {
+		case errors.Is(err, app.ErrInvalidAPIKey):
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
 			return
+		case err != nil:
+			// The identity service is unreachable or errored: fail closed but distinctly,
+			// so a transient auth-svc outage does not look like a bad key to the caller.
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "auth temporarily unavailable"})
+			return
 		}
-		c.Set(tenantCtxKey, ak.TenantID)
+		c.Set(tenantCtxKey, tenantID)
 		c.Next()
 	}
 }

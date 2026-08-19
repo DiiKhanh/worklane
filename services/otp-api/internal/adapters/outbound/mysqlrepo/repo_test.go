@@ -64,40 +64,9 @@ func newRepo(t *testing.T) (*mysqlrepo.Repo, *gorm.DB) {
 	return mysqlrepo.New(db), db
 }
 
-func seedTenantAndKey(t *testing.T, db *gorm.DB, tenantID, hashedKey string) {
-	t.Helper()
-	if err := db.Exec("INSERT INTO tenants (id, name) VALUES (?, ?)", tenantID, "Demo").Error; err != nil {
-		t.Fatalf("seed tenant: %v", err)
-	}
-	if err := db.Exec(
-		"INSERT INTO api_keys (id, tenant_id, hashed_key, status) VALUES (?, ?, ?, 'active')",
-		"key-"+tenantID, tenantID, hashedKey,
-	).Error; err != nil {
-		t.Fatalf("seed api key: %v", err)
-	}
-}
-
-func TestRepo_FindAPIKey(t *testing.T) {
-	repo, db := newRepo(t)
-	ctx := context.Background()
-	seedTenantAndKey(t, db, "ten-1", "key-hash-abc")
-
-	got, err := repo.FindAPIKey(ctx, "key-hash-abc")
-	if err != nil {
-		t.Fatalf("find api key: %v", err)
-	}
-	if got.TenantID != "ten-1" || got.Status != "active" {
-		t.Fatalf("unexpected api key: %+v", got)
-	}
-	if _, err := repo.FindAPIKey(ctx, "does-not-exist"); err == nil {
-		t.Fatal("missing key should error")
-	}
-}
-
 func TestRepo_InsertRequest_UpdateState_List(t *testing.T) {
-	repo, db := newRepo(t)
+	repo, _ := newRepo(t)
 	ctx := context.Background()
-	seedTenantAndKey(t, db, "ten-1", "k")
 
 	req := app.Request{
 		ID: "req-1", TenantID: "ten-1", Recipient: "duykhanh@gmail.com",

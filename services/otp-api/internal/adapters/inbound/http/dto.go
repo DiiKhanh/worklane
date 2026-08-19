@@ -17,12 +17,6 @@ type verifyRequest struct {
 	Code      string `json:"code" binding:"required"`
 }
 
-type apiKeyDTO struct {
-	ID       string `json:"id"`
-	TenantID string `json:"tenant_id"`
-	Status   string `json:"status"`
-}
-
 type requestDTO struct {
 	ID        string `json:"id"`
 	Recipient string `json:"recipient"` // already masked at rest
