@@ -59,3 +59,14 @@ func TestLogin_BadCredentials401(t *testing.T) {
 		t.Fatalf("status = %d, want 401", w.Code)
 	}
 }
+
+func TestHealthz_NoAuth_200(t *testing.T) {
+	// verifier + internal token are unused by /healthz; nil/empty are fine.
+	r := NewRouter(fakeSvc{}, nil, "")
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 for /healthz, got %d", w.Code)
+	}
+}

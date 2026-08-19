@@ -14,6 +14,8 @@ func NewRouter(svc AuthService, verifier *security.Verifier, internalToken strin
 	r.Use(gin.Recovery())
 	h := &Handlers{svc: svc}
 
+	r.GET("/healthz", h.Health)
+
 	auth := r.Group("/auth")
 	auth.POST("/login", h.Login)
 	auth.GET("/me", jwtAuth(verifier), h.Me)
