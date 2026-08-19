@@ -1,0 +1,24 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: worklane-api
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`api.otp.<domain>`) && PathPrefix(`/v1`)
+      kind: Rule
+      services:
+        - name: otp-api
+          port: 8888
+      middlewares:
+        - name: otp-ratelimit
+        - name: otp-cors
+    - match: Host(`api.otp.<domain>`) && PathPrefix(`/auth`)
+      kind: Rule
+      services:
+        - name: auth-svc
+          port: 8889
+      middlewares:
+        - name: otp-ratelimit
+        - name: otp-cors

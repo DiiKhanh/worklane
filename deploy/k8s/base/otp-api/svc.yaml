@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: otp-api
+spec:
+  selector:
+    app: otp-api
+  ports:
+    - port: 8888
+      targetPort: 8888

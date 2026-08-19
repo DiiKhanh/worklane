@@ -1,0 +1,19 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: otp-ratelimit
+spec:
+  rateLimit:
+    average: 100
+    burst: 50
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: otp-cors
+spec:
+  headers:
+    accessControlAllowMethods: ["GET", "POST", "DELETE", "OPTIONS"]
+    accessControlAllowHeaders: ["authorization", "content-type", "idempotency-key"]
+    accessControlAllowOriginList: ["https://<vercel-origin>"]
+    accessControlMaxAge: 86400

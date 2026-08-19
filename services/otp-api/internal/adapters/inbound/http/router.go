@@ -18,6 +18,8 @@ func NewRouter(svc OTPService, repo app.Repo, verifier *security.Verifier, intro
 
 	h := &Handlers{svc: svc, repo: repo}
 
+	r.GET("/healthz", h.Health)
+
 	v1 := r.Group("/v1")
 	v1.Use(authenticate(verifier, intro))
 	{

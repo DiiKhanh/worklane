@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: worklane
+resources:
+  - ../../base
+  - ingressroute.yaml
+  # seed-job.yaml is applied on demand, not part of the default apply:
+  #   kubectl apply -f deploy/k8s/overlays/develop/seed-job.yaml
+images:
+  - name: otp-api
+    newName: ghcr.io/duykhanh/worklane-otp-api
+    newTag: latest
+  - name: auth-svc
+    newName: ghcr.io/duykhanh/worklane-auth-svc
+    newTag: latest
+  - name: otp-dispatcher
+    newName: ghcr.io/duykhanh/worklane-otp-dispatcher
+    newTag: latest
+  - name: seed
+    newName: ghcr.io/duykhanh/worklane-seed
+    newTag: latest

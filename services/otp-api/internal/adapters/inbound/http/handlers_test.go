@@ -129,3 +129,15 @@ func TestVerify_WrongCode_Returns401(t *testing.T) {
 		t.Fatalf("want 401 on code mismatch, got %d", rr.Code)
 	}
 }
+
+func TestHealthz_NoAuth_200(t *testing.T) {
+	h := newServer(&fakeSvc{}, validRepo())
+	// no Authorization header on purpose
+	rr := do(t, h, "GET", "/healthz", "", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200 for /healthz without auth, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "ok") {
+		t.Fatalf("want status ok in body, got %s", rr.Body.String())
+	}
+}

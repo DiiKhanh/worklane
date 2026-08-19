@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-svc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-svc
+  template:
+    metadata:
+      labels:
+        app: auth-svc
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      initContainers:
+        - name: wait-for-deps
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done"
+      containers:
+        - name: auth-svc
+          image: auth-svc # tag pinned by the overlay
+          ports:
+            - containerPort: 8889
+          envFrom:
+            - configMapRef:
+                name: worklane-config
+            - secretRef:
+                name: worklane-secrets
+          env:
+            - name: MYSQL_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: worklane-secrets
+                  key: IDENTITY_MYSQL_DSN
+            - name: AUTH_JWT_PRIVATE_KEY_FILE
+              value: /secrets/auth_priv.pem
+            - name: AUTH_JWT_PUBLIC_KEY_FILE
+              value: /secrets/auth_pub.pem
+          volumeMounts:
+            - name: jwt
+              mountPath: /secrets
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8889 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8889 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits: { cpu: "250m", memory: "256Mi" }
+      volumes:
+        - name: jwt
+          secret:
+            secretName: worklane-jwt

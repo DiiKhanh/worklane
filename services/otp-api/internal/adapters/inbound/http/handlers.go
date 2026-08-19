@@ -28,6 +28,13 @@ type Handlers struct {
 
 const defaultListLimit = 100
 
+// Health is an unauthenticated liveness/readiness probe. It reports only that the process
+// is serving - it deliberately does not touch MySQL/Redis, so a slow dependency cannot make
+// k8s kill an otherwise healthy pod.
+func (h *Handlers) Health(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *Handlers) Send(c *gin.Context) {
 	var body sendRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
