@@ -9,11 +9,16 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/duykhanh/worklane/services/auth-svc/internal/app"
+	"github.com/duykhanh/worklane/services/auth-svc/internal/domain"
 )
 
 // AuthService is the inbound port this adapter needs.
 type AuthService interface {
 	Login(ctx context.Context, email, password string) (app.LoginResult, error)
+	Introspect(ctx context.Context, plaintextKey string) (tenantID string, active bool, err error)
+	ListAPIKeys(ctx context.Context, tenantID string) ([]domain.APIKey, error)
+	CreateAPIKey(ctx context.Context, tenantID string) (plaintext, id string, err error)
+	RevokeAPIKey(ctx context.Context, tenantID, id string) error
 }
 
 type Handlers struct{ svc AuthService }

@@ -18,9 +18,13 @@ type fakeSvc struct {
 	err error
 }
 
-func (f fakeSvc) Login(context.Context, string, string) (app.LoginResult, error) {
+func (f fakeSvc) Login(_ context.Context, _, _ string) (app.LoginResult, error) {
 	return f.res, f.err
 }
+func (f fakeSvc) Introspect(context.Context, string) (string, bool, error)     { return "", false, nil }
+func (f fakeSvc) ListAPIKeys(context.Context, string) ([]domain.APIKey, error) { return nil, nil }
+func (f fakeSvc) CreateAPIKey(context.Context, string) (string, string, error) { return "", "", nil }
+func (f fakeSvc) RevokeAPIKey(context.Context, string, string) error           { return nil }
 
 func TestLogin_OK(t *testing.T) {
 	svc := fakeSvc{res: app.LoginResult{
@@ -28,7 +32,7 @@ func TestLogin_OK(t *testing.T) {
 		User: domain.User{ID: "u1", Email: "a@b.co", TenantID: "t1"},
 	}}
 	// verifier can be nil here: /auth/login does not use it.
-	r := NewRouter(svc, nil)
+	r := NewRouter(svc, nil, "")
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"email":"a@b.co","password":"pw"}`))
@@ -46,7 +50,7 @@ func TestLogin_OK(t *testing.T) {
 }
 
 func TestLogin_BadCredentials401(t *testing.T) {
-	r := NewRouter(fakeSvc{err: domain.ErrInvalidCredentials}, nil)
+	r := NewRouter(fakeSvc{err: domain.ErrInvalidCredentials}, nil, "")
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"email":"a@b.co","password":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
