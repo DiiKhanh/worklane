@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-initdb
+data:
+  01-create-identity-db.sql: |
+    CREATE DATABASE IF NOT EXISTS identity;
