@@ -22,6 +22,7 @@ import (
 	redisplatform "github.com/duykhanh/worklane/pkg/platform/redis"
 	"github.com/duykhanh/worklane/pkg/security"
 	otphttp "github.com/duykhanh/worklane/services/otp-api/internal/adapters/inbound/http"
+	"github.com/duykhanh/worklane/services/otp-api/internal/adapters/outbound/identity"
 	"github.com/duykhanh/worklane/services/otp-api/internal/adapters/outbound/mysqlrepo"
 	"github.com/duykhanh/worklane/services/otp-api/internal/adapters/outbound/redisstore"
 	"github.com/duykhanh/worklane/services/otp-api/internal/app"
@@ -38,6 +39,9 @@ func main() {
 	requestedTopic := config.Env("KAFKA_TOPIC_REQUESTED", "otp.requested")
 	httpAddr := config.Env("HTTP_ADDR", ":8888")
 	migrationsDir := config.Env("MIGRATIONS_DIR", "db/otp/migrations")
+	authSvcURL := config.Env("AUTH_SVC_URL", "http://localhost:8889")
+	internalToken := config.EnvOrFile("INTERNAL_API_TOKEN", "")
+	introspectTTL := config.EnvDuration("INTROSPECT_CACHE_TTL", time.Minute)
 
 	// Schema first, so the service comes up against an up-to-date database.
 	if err := mysql.Migrate(dsn, migrationsDir); err != nil {
@@ -66,6 +70,13 @@ func main() {
 		log.Fatalf("otp-api: verifier: %v", err)
 	}
 
+	if internalToken == "" {
+		log.Fatal("otp-api: INTERNAL_API_TOKEN is required")
+	}
+	// Machine API keys are resolved by asking auth-svc (introspection), cached in Redis so
+	// the hot path is amortized O(1). Human JWTs never touch this - they verify locally.
+	introspector := identity.NewCached(identity.NewClient(authSvcURL, internalToken), rc, introspectTTL)
+
 	// Adapters implement the ports; store is both CodeStore and Counter.
 	repo := mysqlrepo.New(db)
 	store := redisstore.New(rc)
@@ -88,7 +99,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              httpAddr,
-		Handler:           otphttp.NewRouter(svc, repo, verifier),
+		Handler:           otphttp.NewRouter(svc, repo, verifier, introspector),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

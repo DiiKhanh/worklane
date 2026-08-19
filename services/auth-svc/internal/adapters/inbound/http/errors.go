@@ -19,6 +19,8 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "user inactive"})
 	case errors.Is(err, domain.ErrRateLimited):
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many attempts, try again later"})
+	case errors.Is(err, domain.ErrAPIKeyNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "api key not found"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 	}

@@ -14,9 +14,9 @@ type Options = {
 };
 
 /**
- * Talks to the real otp-api REST endpoints. Maps snake_case Go JSON to the
- * camelCase dashboard types. The list endpoints omit timestamps today, so
- * `createdAt` falls back to "" until the API exposes it.
+ * Talks to the real backend REST endpoints (otp-api for OTP operations,
+ * auth-svc for API key management). Maps snake_case Go JSON to the
+ * camelCase dashboard types.
  */
 export class LiveDataSource implements DataSource {
   private readonly baseUrl: string;
@@ -46,13 +46,13 @@ export class LiveDataSource implements DataSource {
 
   async listApiKeys(): Promise<ApiKey[]> {
     const rows = await this.get<
-      { id: string; tenant_id: string; status: string }[]
-    >("/v1/api-keys");
+      { id: string; tenant_id: string; status: string; created_at?: string }[]
+    >("/auth/api-keys");
     return rows.map((k) => ({
       id: k.id,
       tenantId: k.tenant_id,
       status: k.status === "revoked" ? "revoked" : "active",
-      createdAt: "",
+      createdAt: k.created_at ?? "",
     }));
   }
 

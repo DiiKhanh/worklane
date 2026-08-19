@@ -31,15 +31,20 @@ type realClock struct{}
 func (realClock) Now() time.Time { return time.Now() }
 
 func main() {
-	dsn := config.Env("MYSQL_DSN", "root:secret@tcp(localhost:3306)/otp?parseTime=true&multiStatements=true")
+	dsn := config.Env("MYSQL_DSN", "root:secret@tcp(localhost:3306)/identity?parseTime=true&multiStatements=true")
 	redisURL := config.Env("REDIS_URL", "redis://localhost:6379/0")
 	priv := config.EnvOrFile("AUTH_JWT_PRIVATE_KEY", "")
 	pub := config.EnvOrFile("AUTH_JWT_PUBLIC_KEY", "")
 	ttl := config.EnvDuration("AUTH_TOKEN_TTL", time.Hour)
 	httpAddr := config.Env("HTTP_ADDR", ":8889")
+	migrationsDir := config.Env("MIGRATIONS_DIR", "db/identity/migrations")
+	internalToken := config.Env("INTERNAL_API_TOKEN", "")
 
 	if priv == "" || pub == "" {
 		log.Fatal("auth-svc: AUTH_JWT_PRIVATE_KEY and AUTH_JWT_PUBLIC_KEY are required")
+	}
+	if internalToken == "" {
+		log.Fatal("auth-svc: INTERNAL_API_TOKEN is required")
 	}
 	issuer, err := security.NewIssuer(priv, ttl)
 	if err != nil {
@@ -50,6 +55,9 @@ func main() {
 		log.Fatalf("auth-svc: verifier: %v", err)
 	}
 
+	if err := mysql.Migrate(dsn, migrationsDir); err != nil {
+		log.Fatalf("auth-svc: migrate: %v", err)
+	}
 	db, err := mysql.Open(dsn)
 	if err != nil {
 		log.Fatalf("auth-svc: mysql: %v", err)
@@ -62,7 +70,7 @@ func main() {
 	limiter := ratelimit.New(rc, config.EnvInt("LOGIN_RATE_MAX", 10), config.EnvDuration("LOGIN_RATE_WINDOW", 15*time.Minute))
 	svc := app.New(app.Deps{Repo: mysqlrepo.New(db), Issuer: issuer, Limiter: limiter, Clock: realClock{}})
 
-	srv := &http.Server{Addr: httpAddr, Handler: authhttp.NewRouter(svc, verifier), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: httpAddr, Handler: authhttp.NewRouter(svc, verifier, internalToken), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Printf("auth-svc: listening on %s", httpAddr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

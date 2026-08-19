@@ -9,4 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/auth-svc ./services/auth-svc
 FROM gcr.io/distroless/static-debian12
 WORKDIR /
 COPY --from=build /out/auth-svc /auth-svc
+COPY --from=build /src/db/identity/migrations /db/identity/migrations
+ENV MIGRATIONS_DIR=/db/identity/migrations
+EXPOSE 8889
 ENTRYPOINT ["/auth-svc"]

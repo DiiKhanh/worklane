@@ -64,19 +64,6 @@ func (h *Handlers) Verify(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "verified"})
 }
 
-func (h *Handlers) ListAPIKeys(c *gin.Context) {
-	keys, err := h.repo.ListAPIKeys(c.Request.Context(), c.GetString(tenantCtxKey))
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	out := make([]apiKeyDTO, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, apiKeyDTO{ID: k.ID, TenantID: k.TenantID, Status: k.Status})
-	}
-	c.JSON(http.StatusOK, out)
-}
-
 func (h *Handlers) ListRequests(c *gin.Context) {
 	rows, err := h.repo.ListRequests(c.Request.Context(), c.GetString(tenantCtxKey), defaultListLimit)
 	if err != nil {

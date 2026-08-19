@@ -1,0 +1,24 @@
+CREATE TABLE tenants (
+  id CHAR(36) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE api_keys (
+  id CHAR(36) PRIMARY KEY,
+  tenant_id CHAR(36) NOT NULL,
+  hashed_key VARCHAR(128) NOT NULL UNIQUE,
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_api_keys_tenant (tenant_id)
+);
+
+CREATE TABLE users (
+  id            CHAR(36) PRIMARY KEY,
+  tenant_id     CHAR(36) NOT NULL,
+  email         VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  status        VARCHAR(16)  NOT NULL DEFAULT 'active',
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_users_tenant (tenant_id)
+);

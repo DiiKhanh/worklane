@@ -38,6 +38,7 @@ http:
         accessControlAllowMethods:
           - GET
           - POST
+          - DELETE
           - OPTIONS
         accessControlAllowOriginList:
           - "*"

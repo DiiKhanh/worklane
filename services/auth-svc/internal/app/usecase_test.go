@@ -19,6 +19,16 @@ func (f fakeRepo) FindUserByEmail(context.Context, string) (domain.User, error) 
 	return f.u, f.err
 }
 
+// The login tests exercise only FindUserByEmail; the api-key methods are stubbed so
+// fakeRepo still satisfies the full app.Repo port (api-key behavior is covered in
+// apikey_usecase_test.go).
+func (fakeRepo) FindAPIKeyByHash(context.Context, string) (domain.APIKey, error) {
+	return domain.APIKey{}, domain.ErrAPIKeyNotFound
+}
+func (fakeRepo) InsertAPIKey(context.Context, string, string) (string, error) { return "", nil }
+func (fakeRepo) ListAPIKeys(context.Context, string) ([]domain.APIKey, error) { return nil, nil }
+func (fakeRepo) RevokeAPIKey(context.Context, string, string) error           { return nil }
+
 type fakeIssuer struct{}
 
 func (fakeIssuer) Issue(_, _, _ string, now time.Time) (string, time.Time, error) {

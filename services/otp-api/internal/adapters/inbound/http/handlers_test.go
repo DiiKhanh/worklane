@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/duykhanh/worklane/pkg/security"
 	otphttp "github.com/duykhanh/worklane/services/otp-api/internal/adapters/inbound/http"
 	"github.com/duykhanh/worklane/services/otp-api/internal/app"
 	"github.com/duykhanh/worklane/services/otp-api/internal/domain"
@@ -29,19 +28,10 @@ func (f *fakeSvc) Send(_ context.Context, in app.SendInput) (app.SendResult, err
 }
 func (f *fakeSvc) Verify(context.Context, app.VerifyInput) error { return f.verifyErr }
 
-type fakeRepo struct{ validHashedKey string }
+type fakeRepo struct{}
 
 func (f *fakeRepo) InsertRequest(context.Context, app.Request) error  { return nil }
 func (f *fakeRepo) UpdateState(context.Context, string, string) error { return nil }
-func (f *fakeRepo) FindAPIKey(_ context.Context, hashedKey string) (app.APIKey, error) {
-	if hashedKey == f.validHashedKey {
-		return app.APIKey{ID: "k1", TenantID: "t1", Status: "active"}, nil
-	}
-	return app.APIKey{}, domain.ErrNotFound
-}
-func (f *fakeRepo) ListAPIKeys(context.Context, string) ([]app.APIKey, error) {
-	return []app.APIKey{{ID: "k1", TenantID: "t1", Status: "active"}}, nil
-}
 func (f *fakeRepo) ListRequests(context.Context, string, int) ([]app.Request, error) {
 	return []app.Request{{ID: "r1", TenantID: "t1", State: "verified"}}, nil
 }
@@ -49,16 +39,22 @@ func (f *fakeRepo) ListDeliveryLogs(context.Context, string, int) ([]app.Deliver
 	return nil, nil
 }
 
+// stubIntrospector resolves any opaque key to tenant t1, so the API-key auth branch passes
+// in these handler tests (auth resolution itself is covered in middleware_test.go).
+type stubIntrospector struct{}
+
+func (stubIntrospector) Introspect(context.Context, string) (string, error) { return "t1", nil }
+
 func newServer(svc otphttp.OTPService, repo app.Repo) http.Handler {
-	// These tests authenticate with an API key (opaque, no dots), which never reaches the
-	// JWT branch, so a nil verifier is sufficient here.
-	return otphttp.NewRouter(svc, repo, nil)
+	// These tests authenticate with an opaque API key, which never reaches the JWT branch,
+	// so a nil verifier is sufficient; the introspector stub resolves the key to a tenant.
+	return otphttp.NewRouter(svc, repo, nil, stubIntrospector{})
 }
 
 const testKey = "testkey"
 
 func validRepo() *fakeRepo {
-	return &fakeRepo{validHashedKey: security.HashKey(testKey)}
+	return &fakeRepo{}
 }
 
 func do(t *testing.T, h http.Handler, method, path, key, body string) *httptest.ResponseRecorder {
@@ -131,16 +127,5 @@ func TestVerify_WrongCode_Returns401(t *testing.T) {
 	rr := do(t, h, "POST", "/v1/otp/verify", testKey, `{"recipient":"a@b.co","code":"000000"}`)
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401 on code mismatch, got %d", rr.Code)
-	}
-}
-
-func TestListAPIKeys_Returns200(t *testing.T) {
-	h := newServer(&fakeSvc{}, validRepo())
-	rr := do(t, h, "GET", "/v1/api-keys", testKey, "")
-	if rr.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", rr.Code)
-	}
-	if !strings.Contains(rr.Body.String(), "k1") {
-		t.Fatalf("expected api key in body: %s", rr.Body.String())
 	}
 }

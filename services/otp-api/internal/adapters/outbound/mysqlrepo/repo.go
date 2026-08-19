@@ -21,16 +21,6 @@ func New(db *gorm.DB) *Repo { return &Repo{db: db} }
 
 // --- GORM row models (private; mapped to app types at the boundary) ---
 
-type apiKeyRow struct {
-	ID        string
-	TenantID  string
-	HashedKey string
-	Status    string
-	CreatedAt time.Time
-}
-
-func (apiKeyRow) TableName() string { return "api_keys" }
-
 type otpRequestRow struct {
 	ID              string
 	TenantID        string
@@ -80,27 +70,6 @@ func (r *Repo) UpdateState(ctx context.Context, id, to string) error {
 		return fmt.Errorf("mysql: update state: %w", res.Error)
 	}
 	return nil
-}
-
-func (r *Repo) FindAPIKey(ctx context.Context, hashedKey string) (app.APIKey, error) {
-	var row apiKeyRow
-	if err := r.db.WithContext(ctx).Where("hashed_key = ?", hashedKey).First(&row).Error; err != nil {
-		return app.APIKey{}, fmt.Errorf("mysql: find api key: %w", err)
-	}
-	return app.APIKey{ID: row.ID, TenantID: row.TenantID, Status: row.Status}, nil
-}
-
-func (r *Repo) ListAPIKeys(ctx context.Context, tenantID string) ([]app.APIKey, error) {
-	var rows []apiKeyRow
-	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).
-		Order("created_at DESC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("mysql: list api keys: %w", err)
-	}
-	out := make([]app.APIKey, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, app.APIKey{ID: row.ID, TenantID: row.TenantID, Status: row.Status})
-	}
-	return out, nil
 }
 
 func (r *Repo) ListRequests(ctx context.Context, tenantID string, limit int) ([]app.Request, error) {

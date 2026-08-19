@@ -18,3 +18,24 @@ type loginResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	User      userDTO   `json:"user"`
 }
+
+type introspectRequest struct {
+	Token string `json:"token" binding:"required"`
+}
+
+type introspectResponse struct {
+	Active   bool   `json:"active"`
+	TenantID string `json:"tenant_id,omitempty"`
+}
+
+type apiKeyDTO struct {
+	ID        string `json:"id"`
+	TenantID  string `json:"tenant_id"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
+}
+
+type createKeyResponse struct {
+	ID  string `json:"id"`
+	Key string `json:"key"`
+}

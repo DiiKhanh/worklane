@@ -29,7 +29,7 @@ flowchart LR
     end
 
     Redis[("Redis<br/>code hash+TTL, counters")]
-    MySQL[("MySQL<br/>tenants, api_keys,<br/>otp_requests, delivery_logs")]
+    MySQL[("MySQL<br/>identity db: tenants, users, api_keys<br/>otp db: otp_requests, delivery_logs, templates")]
     Kafka{{"Kafka / Redpanda<br/>otp.requested · sent · failed · dlq"}}
     Mail["Email<br/>MailHog (local) / Resend (prod)"]
 
@@ -46,6 +46,12 @@ flowchart LR
 
 Dev-only web UIs (also in compose, not part of the request path): Adminer (MySQL), RedisInsight,
 Redpanda Console, MailHog, Traefik dashboard.
+
+**Auth & identity:** human login (email+password -> EdDSA JWT) and machine API keys are owned
+by a dedicated `auth-svc` backed by its own `identity` database (tenants, users, api_keys).
+otp-api verifies JWTs locally with the public key, and resolves API keys by calling auth-svc's
+network-internal `/internal/introspect` (Redis-cached). See
+[dashboard-auth-identity-service-design](superpowers/specs/2026-08-19-dashboard-auth-identity-service-design.md).
 
 ---
 
@@ -168,6 +174,11 @@ stateDiagram-v2
 ---
 
 ## 5. Data model (MySQL)
+
+> Database-per-service: `tenants`, `users`, and `api_keys` live in the **identity** database
+> (owned by auth-svc); `otp_requests`, `delivery_logs`, and `templates` live in the **otp**
+> database (owned by otp-api). The relationships below are logical - `tenant_id` is a soft
+> reference across databases, with no cross-database foreign key.
 
 ```mermaid
 erDiagram

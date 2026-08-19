@@ -7,9 +7,13 @@ import (
 	"github.com/duykhanh/worklane/services/auth-svc/internal/domain"
 )
 
-// Repo reads identity rows.
+// Repo reads and writes identity rows (users and api keys).
 type Repo interface {
 	FindUserByEmail(ctx context.Context, email string) (domain.User, error)
+	FindAPIKeyByHash(ctx context.Context, hashedKey string) (domain.APIKey, error)
+	InsertAPIKey(ctx context.Context, tenantID, hashedKey string) (id string, err error)
+	ListAPIKeys(ctx context.Context, tenantID string) ([]domain.APIKey, error)
+	RevokeAPIKey(ctx context.Context, tenantID, id string) error
 }
 
 // TokenIssuer mints a signed access token. Implemented by *security.Issuer.

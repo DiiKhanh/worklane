@@ -1,8 +1,8 @@
-// Command seed mints a tenant and an API key for local/dev use. It prints the plaintext
-// key ONCE and stores only its hash - the same hash otp-api computes when authenticating
-// an incoming key (via pkg/security). Run against the compose MySQL:
+// Command seed mints a tenant, a user, and an API key for local/dev use. It prints the
+// plaintext key ONCE and stores only its hash. Run against the compose MySQL:
 //
-//	go run ./services/seed --name demo
+//	MYSQL_DSN='root:secret@tcp(localhost:3306)/identity?parseTime=true&multiStatements=true' \
+//	  go run ./services/seed --name demo --email you@demo.co --password 'sup3rsecret'
 package main
 
 import (
@@ -32,7 +32,7 @@ func main() {
 		log.Fatal("seed: --name, --email and --password are required")
 	}
 
-	dsn := config.Env("MYSQL_DSN", "root:secret@tcp(localhost:3306)/otp?parseTime=true&multiStatements=true")
+	dsn := config.Env("MYSQL_DSN", "root:secret@tcp(localhost:3306)/identity?parseTime=true&multiStatements=true")
 	db, err := mysql.Open(dsn)
 	if err != nil {
 		log.Fatalf("seed: mysql: %v", err)
