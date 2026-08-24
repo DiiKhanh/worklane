@@ -30,6 +30,19 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/redpanda/data
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - |
+                    for i in $(seq 1 30); do
+                      rpk cluster config set log_retention_ms 600000 && \
+                      rpk cluster config set retention_bytes 268435456 && exit 0
+                      sleep 2
+                    done
+                    echo "redpanda: failed to set retention (non-fatal)" >&2
           readinessProbe:
             exec:
               command: ["sh", "-c", "rpk cluster health | grep -q 'Healthy:.*true'"]

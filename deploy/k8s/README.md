@@ -77,6 +77,21 @@ Roll back to a specific known-good SHA:
     curl -s -o /dev/null -w "%{http_code}\n" \
       -X POST https://api.otp.<domain>/internal/introspect -d '{}'               # 404
 
+## Disk guardrails (host)
+
+k3s image garbage collection - reclaim old :<git-sha> images automatically.
+Edit /etc/rancher/k3s/config.yaml on the node:
+
+    kubelet-arg:
+      - "image-gc-high-threshold=80"
+      - "image-gc-low-threshold=70"
+
+Then: systemctl restart k3s
+
+Redpanda log retention is bounded in deploy/k8s/base/redpanda/statefulset.yaml
+(log_retention_ms=10m, retention_bytes=256MB) so the Kafka log cannot fill /var.
+MySQL's InnoDB buffer pool is pinned to 128M in deploy/k8s/base/mysql/statefulset.yaml.
+
 ## Notes
 
 - otp-api & otp-dispatcher read `MYSQL_DSN` = `OTP_MYSQL_DSN`; auth-svc reads
