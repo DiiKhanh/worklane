@@ -61,6 +61,7 @@ services:
     build:
       context: ../..
       dockerfile: services/otp-api/Dockerfile
+    restart: on-failure # ride out the MySQL first-init restart window (like k8s self-heal)
     environment:
       MYSQL_DSN: "root:secret@tcp(mysql:3306)/otp?parseTime=true&multiStatements=true"
       AUTH_SVC_URL: "http://auth-svc:8889"
@@ -82,6 +83,7 @@ services:
     build:
       context: ../..
       dockerfile: services/auth-svc/Dockerfile
+    restart: on-failure # ride out the MySQL first-init restart window (like k8s self-heal)
     environment:
       MYSQL_DSN: "root:secret@tcp(mysql:3306)/identity?parseTime=true&multiStatements=true"
       REDIS_URL: "redis://redis:6379/0"
@@ -101,6 +103,7 @@ services:
     build:
       context: ../..
       dockerfile: services/otp-dispatcher/Dockerfile
+    restart: on-failure # ride out the MySQL first-init restart window (like k8s self-heal)
     environment:
       MYSQL_DSN: "root:secret@tcp(mysql:3306)/otp?parseTime=true&multiStatements=true"
       KAFKA_BROKERS: "redpanda:9092"

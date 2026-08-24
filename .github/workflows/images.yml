@@ -30,17 +30,30 @@ jobs:
           openssl rsa -in deploy/compose/secrets/auth_priv.pem -pubout -out deploy/compose/secrets/auth_pub.pem
       - name: Bring up the stack
         working-directory: deploy/compose
-        run: docker compose up -d --build --wait
-      - name: Wait for otp-api health
+        env:
+          EMAIL_PROVIDER: smtp # force MailHog capture; never hit a real provider in CI
+        run: docker compose up -d --build
+      - name: Wait for services to be ready
         run: |
-          for i in $(seq 1 30); do
-            curl -fsS http://localhost/healthz && break || sleep 2
+          # /healthz is intentionally not exposed via Traefik. An unauthenticated
+          # call returns 401 once the service is up, routed, and (for auth-svc) has
+          # migrated the identity schema the e2e seed needs. 502/000 while down.
+          hit() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
+          for i in $(seq 1 60); do
+            # well-formed body so a bad login reaches the DB lookup (401 = schema ready);
+            # an empty body would short-circuit at validation (400) before proving the DB.
+            login=$(hit -X POST http://localhost/auth/login -H 'Content-Type: application/json' -d '{"email":"x@y.co","password":"z"}')
+            send=$(hit -X POST http://localhost/v1/otp/send -d '{}')
+            echo "attempt $i: auth-login=$login otp-send=$send"
+            [ "$login" = "401" ] && [ "$send" = "401" ] && exit 0
+            sleep 2
           done
+          echo "services not ready after ~2m"; exit 1
       - name: Run E2E smoke
         env:
           E2E_API_BASE: http://localhost
           E2E_MAILHOG: http://localhost:8025
-          MYSQL_DSN: "root:secret@tcp(localhost:3306)/otp?parseTime=true&multiStatements=true"
+          MYSQL_DSN: "root:secret@tcp(localhost:3306)/identity?parseTime=true&multiStatements=true"
         run: go test -tags e2e ./test/e2e/...
       - name: Dump logs on failure
         if: failure()
