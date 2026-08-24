@@ -9,7 +9,7 @@ SVCS=(otp-api auth-svc otp-dispatcher seed)
 cd "$(git rev-parse --show-toplevel)"
 
 for svc in "${SVCS[@]}"; do
-  ( cd "$OVERLAY" && kustomize edit set image "$svc=ghcr.io/duykhanh/worklane-$svc:$SHA" )
+  ( cd "$OVERLAY" && kustomize edit set image "$svc=ghcr.io/diikhanh/worklane-$svc:$SHA" )
 done
 
 echo ">> Applying prod overlay pinned to $SHA"

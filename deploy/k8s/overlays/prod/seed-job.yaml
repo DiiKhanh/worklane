@@ -12,7 +12,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: seed
-          image: ghcr.io/duykhanh/worklane-seed:latest
+          image: ghcr.io/diikhanh/worklane-seed:latest
           args: ["--name", "demo", "--email", "you@demo.co", "--password", "changeme-now"]
           env:
             - name: MYSQL_DSN

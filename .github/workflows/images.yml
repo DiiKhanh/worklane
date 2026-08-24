@@ -82,7 +82,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/duykhanh/worklane-${{ matrix.svc }}
+          images: ghcr.io/diikhanh/worklane-${{ matrix.svc }}
           tags: |
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}

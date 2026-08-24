@@ -8,14 +8,14 @@ resources:
   #   kubectl apply -f deploy/k8s/overlays/prod/seed-job.yaml
 images:
   - name: otp-api
-    newName: ghcr.io/duykhanh/worklane-otp-api
+    newName: ghcr.io/diikhanh/worklane-otp-api
     newTag: latest
   - name: auth-svc
-    newName: ghcr.io/duykhanh/worklane-auth-svc
+    newName: ghcr.io/diikhanh/worklane-auth-svc
     newTag: latest
   - name: otp-dispatcher
-    newName: ghcr.io/duykhanh/worklane-otp-dispatcher
+    newName: ghcr.io/diikhanh/worklane-otp-dispatcher
     newTag: latest
   - name: seed
-    newName: ghcr.io/duykhanh/worklane-seed
+    newName: ghcr.io/diikhanh/worklane-seed
     newTag: latest
