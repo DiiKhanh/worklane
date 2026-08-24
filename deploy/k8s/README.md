@@ -104,6 +104,8 @@ Redpanda log retention is bounded in deploy/k8s/base/redpanda/statefulset.yaml
 (log_retention_ms=10m, retention_bytes=256MB) so the Kafka log cannot fill /var.
 MySQL's InnoDB buffer pool is pinned to 128M in deploy/k8s/base/mysql/statefulset.yaml.
 
+Alerting setup (Telegram + disk alert + uptime ping): see docs/runbooks/alerting.md
+
 ## Notes
 
 - otp-api & otp-dispatcher read `MYSQL_DSN` = `OTP_MYSQL_DSN`; auth-svc reads
