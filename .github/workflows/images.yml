@@ -26,8 +26,9 @@ jobs:
       - name: Generate throwaway JWT keypair for the stack
         run: |
           mkdir -p deploy/compose/secrets
-          openssl genpkey -algorithm RSA -out deploy/compose/secrets/auth_priv.pem -pkeyopt rsa_keygen_bits:2048
-          openssl rsa -in deploy/compose/secrets/auth_priv.pem -pubout -out deploy/compose/secrets/auth_pub.pem
+          # auth-svc signs with Ed25519 (see pkg/security/jwt.go) - RSA is rejected.
+          openssl genpkey -algorithm ed25519 -out deploy/compose/secrets/auth_priv.pem
+          openssl pkey -in deploy/compose/secrets/auth_priv.pem -pubout -out deploy/compose/secrets/auth_pub.pem
       - name: Bring up the stack
         working-directory: deploy/compose
         env:
