@@ -5,7 +5,7 @@ resources:
   - ../../base
   - ingressroute.yaml
   # seed-job.yaml is applied on demand, not part of the default apply:
-  #   kubectl apply -f deploy/k8s/overlays/develop/seed-job.yaml
+  #   kubectl apply -f deploy/k8s/overlays/prod/seed-job.yaml
 images:
   - name: otp-api
     newName: ghcr.io/duykhanh/worklane-otp-api

@@ -94,7 +94,7 @@ worklane/
 │       ├── base/
 │       │   ├── otp-api/            # per-service manifests (Deployment, Service, ...)
 │       │   └── otp-dispatcher/
-│       └── overlays/develop/       # k3s develop overlay
+│       └── overlays/prod/          # k3s prod overlay
 ├── dashboard/                      # Next.js app (deployed separately to Vercel)
 └── docs/
 ```

@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mysql-backup
+spec:
+  schedule: "0 18 * * *" # 01:00 Asia/Ho_Chi_Minh (UTC+7)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          volumes:
+            - name: work
+              emptyDir: {}
+          # initContainer owns mysqldump (mysql image has the client);
+          # the main container owns the R2 upload (aws-cli image). They share
+          # an emptyDir so neither image needs the other's tooling.
+          initContainers:
+            - name: dump
+              image: mysql:8.0
+              command:
+                - sh
+                - -c
+                - mysqldump -h mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --databases otp identity | gzip > /work/dump.sql.gz
+              env:
+                - name: MYSQL_ROOT_PASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: worklane-secrets, key: MYSQL_ROOT_PASSWORD }
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.15.30
+              command:
+                - sh
+                - -c
+                - aws s3 cp /work/dump.sql.gz "s3://$R2_BUCKET/worklane-$(date +%Y%m%d).sql.gz" --endpoint-url "$R2_ENDPOINT"
+              envFrom:
+                - secretRef: { name: r2-backup }
+              volumeMounts:
+                - name: work
+                  mountPath: /work

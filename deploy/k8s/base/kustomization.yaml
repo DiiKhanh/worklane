@@ -17,3 +17,6 @@ resources:
   - auth-svc/deployment.yaml
   - otp-dispatcher/deployment.yaml
   - ingress/middlewares.yaml
+  - observability/alloy-config.yaml
+  - observability/alloy.yaml
+  - backup/backup-cronjob.yaml
