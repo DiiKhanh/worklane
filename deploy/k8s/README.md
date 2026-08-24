@@ -77,6 +77,18 @@ Roll back to a specific known-good SHA:
     curl -s -o /dev/null -w "%{http_code}\n" \
       -X POST https://api.otp.<domain>/internal/introspect -d '{}'               # 404
 
+## Grafana Cloud secret (out-of-band)
+
+From the Grafana Cloud stack: copy the Prometheus remote_write URL + user id,
+the Loki push URL + user id, and an access-policy token, then:
+
+    kubectl -n worklane create secret generic grafana-cloud \
+      --from-literal=PROM_URL='<grafana-cloud-prom-url>' \
+      --from-literal=PROM_USER='<grafana-cloud-prom-user>' \
+      --from-literal=LOKI_URL='<grafana-cloud-loki-url>' \
+      --from-literal=LOKI_USER='<grafana-cloud-loki-user>' \
+      --from-literal=TOKEN='<grafana-cloud-token>'
+
 ## Disk guardrails (host)
 
 k3s image garbage collection - reclaim old :<git-sha> images automatically.

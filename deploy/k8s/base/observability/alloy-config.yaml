@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config
+data:
+  # NOTE: Alloy River config. Component names/args track the grafana/alloy tag
+  # pinned in alloy.yaml (v1.5.1). Validate against Grafana Cloud's own "Alloy"
+  # connection snippet at setup time - it emits the exact endpoints. The scrape
+  # topology below (app + redpanda + node + pod logs) is the part that is fixed.
+  config.alloy: |
+    prometheus.remote_write "gc" {
+      endpoint {
+        url = sys.env("PROM_URL")
+        basic_auth {
+          username = sys.env("PROM_USER")
+          password = sys.env("TOKEN")
+        }
+      }
+    }
+
+    // App services: scrape /metrics on otp-api and auth-svc.
+    discovery.kubernetes "pods" { role = "pod" }
+    discovery.relabel "app" {
+      targets = discovery.kubernetes.pods.targets
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        regex         = "worklane"
+        action        = "keep"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app"]
+        regex         = "otp-api|auth-svc"
+        action        = "keep"
+      }
+    }
+    prometheus.scrape "app" {
+      targets    = discovery.relabel.app.output
+      forward_to = [prometheus.remote_write.gc.receiver]
+    }
+
+    // Redpanda self-metrics (consumer lag / topic bytes) on :9644.
+    discovery.relabel "redpanda" {
+      targets = discovery.kubernetes.pods.targets
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app"]
+        regex         = "redpanda"
+        action        = "keep"
+      }
+      rule {
+        target_label = "__address__"
+        replacement  = "redpanda:9644"
+      }
+    }
+    prometheus.scrape "redpanda" {
+      targets      = discovery.relabel.redpanda.output
+      metrics_path = "/metrics"
+      forward_to   = [prometheus.remote_write.gc.receiver]
+    }
+
+    // Node metrics (disk %, signal #4). Reads the host rootfs mounted at /host/*.
+    prometheus.exporter.unix "node" {
+      rootfs_path = "/host/root"
+      procfs_path = "/host/proc"
+      sysfs_path  = "/host/sys"
+    }
+    prometheus.scrape "node" {
+      targets    = prometheus.exporter.unix.node.targets
+      forward_to = [prometheus.remote_write.gc.receiver]
+    }
+
+    // Pod logs -> Loki.
+    loki.write "gc" {
+      endpoint {
+        url = sys.env("LOKI_URL")
+        basic_auth {
+          username = sys.env("LOKI_USER")
+          password = sys.env("TOKEN")
+        }
+      }
+    }
+    loki.source.kubernetes "pods" {
+      targets    = discovery.kubernetes.pods.targets
+      forward_to = [loki.write.gc.receiver]
+    }
