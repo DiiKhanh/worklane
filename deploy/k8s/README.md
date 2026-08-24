@@ -89,6 +89,16 @@ the Loki push URL + user id, and an access-policy token, then:
       --from-literal=LOKI_USER='<grafana-cloud-loki-user>' \
       --from-literal=TOKEN='<grafana-cloud-token>'
 
+## R2 backup secret (out-of-band)
+
+Create an R2 bucket + an S3-compatible API token, then:
+
+    kubectl -n worklane create secret generic r2-backup \
+      --from-literal=R2_ENDPOINT='<r2-s3-endpoint>' \
+      --from-literal=R2_BUCKET='<r2-bucket>' \
+      --from-literal=AWS_ACCESS_KEY_ID='<r2-access-key>' \
+      --from-literal=AWS_SECRET_ACCESS_KEY='<r2-secret-key>'
+
 ## Disk guardrails (host)
 
 k3s image garbage collection - reclaim old :<git-sha> images automatically.
