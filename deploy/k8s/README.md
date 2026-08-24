@@ -36,12 +36,12 @@ Replace the placeholder values. `<pw>` is the MySQL root password; the DSNs embe
 
 ## 3. Deploy
 
-    kubectl apply -k deploy/k8s/overlays/develop
+    kubectl apply -k deploy/k8s/overlays/prod
     kubectl -n worklane get pods -w   # mysql/redpanda/redis first, then the apps
 
 ## 4. Seed a tenant/user/api-key (on demand)
 
-    kubectl apply -f deploy/k8s/overlays/develop/seed-job.yaml
+    kubectl apply -f deploy/k8s/overlays/prod/seed-job.yaml
     kubectl -n worklane logs job/seed   # prints the API key once
     kubectl -n worklane delete job/seed # clean up when done
 
@@ -68,5 +68,5 @@ Replace the placeholder values. `<pw>` is the MySQL root password; the DSNs embe
 - `/internal/introspect` has no IngressRoute; otp-api reaches auth-svc in-cluster.
 - Redis is ephemeral (no PVC) - all its data is TTL/cache/regenerable.
 - Before the first live apply, set the real `api.otp.<domain>` host in
-  `overlays/develop/ingressroute.yaml` and the real Vercel origin in
+  `overlays/prod/ingressroute.yaml` and the real Vercel origin in
   `base/ingress/middlewares.yaml`.
