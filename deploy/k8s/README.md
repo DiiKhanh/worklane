@@ -34,10 +34,26 @@ Replace the placeholder values. `<pw>` is the MySQL root password; the DSNs embe
       --docker-username=<github-user> \
       --docker-password=<github-pat-with-read:packages>
 
-## 3. Deploy
+## 3. Deploy / rollback (prod)
+
+First bring-up (or any manual apply):
 
     kubectl apply -k deploy/k8s/overlays/prod
     kubectl -n worklane get pods -w   # mysql/redpanda/redis first, then the apps
+
+Routine deploy of a CI-built SHA (find it in the GHCR package tags or the Actions run) -
+pins all image tags to the SHA, applies, and waits for the rollout:
+
+    deploy/scripts/deploy.sh <git-sha>
+    git commit -am "deploy: prod -> <git-sha>"   # record what is running
+
+Roll back fast to the previous ReplicaSet:
+
+    deploy/scripts/rollback.sh
+
+Roll back to a specific known-good SHA:
+
+    deploy/scripts/rollback.sh <git-sha>
 
 ## 4. Seed a tenant/user/api-key (on demand)
 
