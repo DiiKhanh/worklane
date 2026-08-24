@@ -7,7 +7,52 @@ permissions:
   contents: read
   packages: write
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - run: go test ./...
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - name: Generate throwaway JWT keypair for the stack
+        run: |
+          mkdir -p deploy/compose/secrets
+          openssl genpkey -algorithm RSA -out deploy/compose/secrets/auth_priv.pem -pkeyopt rsa_keygen_bits:2048
+          openssl rsa -in deploy/compose/secrets/auth_priv.pem -pubout -out deploy/compose/secrets/auth_pub.pem
+      - name: Bring up the stack
+        working-directory: deploy/compose
+        run: docker compose up -d --build --wait
+      - name: Wait for otp-api health
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost/healthz && break || sleep 2
+          done
+      - name: Run E2E smoke
+        env:
+          E2E_API_BASE: http://localhost
+          E2E_MAILHOG: http://localhost:8025
+          MYSQL_DSN: "root:secret@tcp(localhost:3306)/otp?parseTime=true&multiStatements=true"
+        run: go test -tags e2e ./test/e2e/...
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: deploy/compose
+        run: docker compose logs --no-color
+      - name: Tear down
+        if: always()
+        working-directory: deploy/compose
+        run: docker compose down -v
+
   build:
+    needs: [test, smoke]
     runs-on: ubuntu-latest
     strategy:
       matrix:
