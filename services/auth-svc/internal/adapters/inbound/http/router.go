@@ -3,6 +3,7 @@ package http
 import (
 	"github.com/gin-gonic/gin"
 
+	"github.com/duykhanh/worklane/pkg/platform/metrics"
 	"github.com/duykhanh/worklane/pkg/security"
 )
 
@@ -12,9 +13,11 @@ func NewRouter(svc AuthService, verifier *security.Verifier, internalToken strin
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(metrics.Middleware())
 	h := &Handlers{svc: svc}
 
 	r.GET("/healthz", h.Health)
+	r.GET("/metrics", metrics.Handler())
 
 	auth := r.Group("/auth")
 	auth.POST("/login", h.Login)

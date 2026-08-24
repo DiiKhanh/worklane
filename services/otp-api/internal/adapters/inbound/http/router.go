@@ -3,6 +3,7 @@ package http
 import (
 	"github.com/gin-gonic/gin"
 
+	"github.com/duykhanh/worklane/pkg/platform/metrics"
 	"github.com/duykhanh/worklane/pkg/security"
 	"github.com/duykhanh/worklane/services/otp-api/internal/app"
 )
@@ -15,10 +16,12 @@ func NewRouter(svc OTPService, repo app.Repo, verifier *security.Verifier, intro
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(metrics.Middleware())
 
 	h := &Handlers{svc: svc, repo: repo}
 
 	r.GET("/healthz", h.Health)
+	r.GET("/metrics", metrics.Handler())
 
 	v1 := r.Group("/v1")
 	v1.Use(authenticate(verifier, intro))
