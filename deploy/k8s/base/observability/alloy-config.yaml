@@ -78,7 +78,30 @@ data:
         }
       }
     }
+    // Promote k8s meta labels to real Loki stream labels. Without this the logs
+    // ship with only instance/job/service_name and cannot be filtered by
+    // namespace/pod/container/app. The __meta_* source labels are still passed
+    // through (loki.source.kubernetes needs them to know which container to tail).
+    discovery.relabel "logs" {
+      targets = discovery.kubernetes.pods.targets
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label  = "container"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app"]
+        target_label  = "app"
+      }
+    }
     loki.source.kubernetes "pods" {
-      targets    = discovery.kubernetes.pods.targets
+      targets    = discovery.relabel.logs.output
       forward_to = [loki.write.gc.receiver]
     }

@@ -9,7 +9,9 @@ metadata:
   name: alloy
 rules:
   - apiGroups: [""]
-    resources: ["pods", "nodes", "nodes/proxy", "services", "endpoints"]
+    # pods/log is required by loki.source.kubernetes, which tails container logs
+    # through the API server's pods/log subresource (not by reading host files).
+    resources: ["pods", "nodes", "nodes/proxy", "services", "endpoints", "pods/log"]
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
