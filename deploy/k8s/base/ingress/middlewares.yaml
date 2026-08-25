@@ -15,5 +15,5 @@ spec:
   headers:
     accessControlAllowMethods: ["GET", "POST", "DELETE", "OPTIONS"]
     accessControlAllowHeaders: ["authorization", "content-type", "idempotency-key"]
-    accessControlAllowOriginList: ["https://<vercel-origin>"]
+    accessControlAllowOriginList: ["https://worklane-six.vercel.app"]
     accessControlMaxAge: 86400
