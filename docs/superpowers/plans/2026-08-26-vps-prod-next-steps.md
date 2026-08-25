@@ -46,11 +46,13 @@ Today the sandbox sender `onboarding@resend.dev` only delivers to the Resend acc
 
 ## P3 - product surface (separate tracks)
 
-### 5. Dashboard on Vercel
-Deploy `dashboard/` to Vercel with `NEXT_PUBLIC_API_BASE=https://api-otp.dikhanh.io.vn`, then set the
-real Vercel origin in `deploy/k8s/base/ingress/middlewares.yaml` (`otp-cors.accessControlAllowOriginList`,
-currently the `https://<vercel-origin>` placeholder) and re-apply.
-- **Done-when:** the dashboard logs in over HTTPS and renders live data with correct CORS.
+### 5. Dashboard on Vercel - DONE (2026-08-26)
+Deployed `dashboard/` (Next.js, root dir `dashboard`) to Vercel at
+**`https://worklane-six.vercel.app`** with `NEXT_PUBLIC_DATA_SOURCE=live` +
+`NEXT_PUBLIC_API_BASE=https://api-otp.dikhanh.io.vn`. CORS origin set in
+`deploy/k8s/base/ingress/middlewares.yaml` (committed) and applied. Human login
+(`you@demo.co`) works over HTTPS with live data. Optional follow-up: a custom
+domain (e.g. `otp.dikhanh.io.vn` CNAME to Vercel) instead of the `.vercel.app` URL.
 
 ### 6. SMS channel (Twilio)
 Add `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` to `worklane-secrets` and a real `TWILIO_FROM` in config;
