@@ -29,7 +29,7 @@ Bringing worklane OTP live on the single-node VPS. Companion to the approved spe
 - [x] **App deploy** - secrets (`worklane-jwt` Ed25519, `worklane-secrets`, placeholder `grafana-cloud`) + `kubectl apply -k overlays/prod` (pinned `sha-f0214ee`, host `api-otp.dikhanh.io.vn`). All 7 pods Running; disk 7.1G/18G.
 - [x] **Verify** - DB split correct (identity: tenants/users/api_keys; otp: otp_requests/delivery_logs/templates); public routing 401 on bad key/login; seed printed API key; **send OTP -> 202, real email delivered via Resend, verify code -> 200**.
 - [x] **Grafana Cloud** - real `grafana-cloud` secret (stack `magentagerbil3564`, region ap-southeast-1); Alloy shipping logs+metrics after fixing a `pods/log` RBAC gap (see gotchas). `forbidden count: 0`.
-- [ ] **Later** - R2 backup secret + un-suspend CronJob; validate `deploy.sh`/`rollback.sh`; uptime->Telegram alert + disk>80% alert; rotate the Grafana token (pasted in a session); dashboard on Vercel; verify `dikhanh.io.vn` on Resend for arbitrary recipients; commit the `alloy.yaml` RBAC fix.
+- [ ] **Later** - tracked in [vps-prod next steps](../superpowers/plans/2026-08-26-vps-prod-next-steps.md): R2 backup, Telegram alerts (uptime + disk>80%), prove deploy/rollback, verify Resend domain, dashboard, SMS.
 
 ## Gotchas hit
 
