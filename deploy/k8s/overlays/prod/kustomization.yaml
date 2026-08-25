@@ -9,13 +9,13 @@ resources:
 images:
   - name: otp-api
     newName: ghcr.io/diikhanh/worklane-otp-api
-    newTag: latest
+    newTag: sha-f0214ee
   - name: auth-svc
     newName: ghcr.io/diikhanh/worklane-auth-svc
-    newTag: latest
+    newTag: sha-f0214ee
   - name: otp-dispatcher
     newName: ghcr.io/diikhanh/worklane-otp-dispatcher
-    newTag: latest
+    newTag: sha-f0214ee
   - name: seed
     newName: ghcr.io/diikhanh/worklane-seed
-    newTag: latest
+    newTag: sha-f0214ee

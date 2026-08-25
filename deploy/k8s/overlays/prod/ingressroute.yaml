@@ -6,7 +6,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`api.otp.<domain>`) && PathPrefix(`/v1`)
+    - match: Host(`api-otp.dikhanh.io.vn`) && PathPrefix(`/v1`)
       kind: Rule
       services:
         - name: otp-api
@@ -14,7 +14,7 @@ spec:
       middlewares:
         - name: otp-ratelimit
         - name: otp-cors
-    - match: Host(`api.otp.<domain>`) && PathPrefix(`/auth`)
+    - match: Host(`api-otp.dikhanh.io.vn`) && PathPrefix(`/auth`)
       kind: Rule
       services:
         - name: auth-svc
