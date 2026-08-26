@@ -11,6 +11,7 @@ Ordered by priority. Each item states its **done-when**.
 
 ### 1. Backup CronJob is failing nightly until R2 exists
 The `mysql-backup` CronJob was applied but has no `r2-backup` secret, so it will fail every night.
+**Step-by-step execution: [backup-r2 runbook](../../runbooks/backup-r2.md)** (secret keys, test job, restore drill).
 Pick one:
 - **Set up R2 now** (preferred): create a Cloudflare R2 bucket + S3 API token, then
   `kubectl -n worklane create secret generic r2-backup --from-literal=R2_ENDPOINT=... --from-literal=R2_BUCKET=... --from-literal=AWS_ACCESS_KEY_ID=... --from-literal=AWS_SECRET_ACCESS_KEY=...`
