@@ -6,6 +6,15 @@ spec:
   entryPoints:
     - web
   routes:
+    # Public uptime probe. Exact-path (not PathPrefix) so only /healthz is exposed.
+    # Handler returns {"status":"ok"} 200, no auth, touches no MySQL/Redis (see
+    # services/otp-api/.../handlers.go Health). Deliberately middleware-free: the
+    # external monitor should see a clean 200, decoupled from OTP rate-limit/CORS policy.
+    - match: Host(`api-otp.dikhanh.io.vn`) && Path(`/healthz`)
+      kind: Rule
+      services:
+        - name: otp-api
+          port: 8888
     - match: Host(`api-otp.dikhanh.io.vn`) && PathPrefix(`/v1`)
       kind: Rule
       services:
