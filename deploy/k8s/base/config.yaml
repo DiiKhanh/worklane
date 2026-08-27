@@ -8,7 +8,7 @@ data:
   AUTH_SVC_URL: "http://auth-svc:8889"
   AUTH_TOKEN_TTL: "1h"
   EMAIL_PROVIDER: "resend"
-  RESEND_FROM: "onboarding@resend.dev"
+  RESEND_FROM: "no-reply@dikhanh.io.vn"
   RESEND_BASE_URL: "https://api.resend.com"
   TWILIO_FROM: "+15005550006"
   TWILIO_BASE_URL: "https://api.twilio.com"
