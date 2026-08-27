@@ -19,7 +19,19 @@ Pick one:
 - **Or suspend it** until you get to R2: `kubectl -n worklane patch cronjob mysql-backup -p '{"spec":{"suspend":true}}'`.
 - **Done-when:** either a nightly dump lands in R2 (and one **restore drill** succeeds - see hardening spec §8), or the CronJob is suspended so no failed jobs pile up.
 
-### 2. Alerting -> Telegram (per docs/runbooks/alerting.md)
+### 2. Alerting -> Telegram - DONE (2026-08-28)
+Both alerts live and **verified end-to-end** (fire + recovery to Telegram), routed to one
+`telegram` contact point via per-rule `notification_settings`:
+- **Disk > 80%**: Grafana-managed rule `node-disk-usage>80%` on
+  `node_filesystem_*{mountpoint="/",fstype="ext4"}` (note: `/`, not `/host/root` - Alloy's
+  `rootfs_path` strips the prefix).
+- **Uptime**: Grafana Cloud **Synthetic Monitoring** check `otp-api-healthz` probes the new
+  public `/healthz` (see `deploy/k8s/overlays/prod/ingressroute.yaml`) from Singapore; rule
+  `otp-api-uptime-down` fires on `probe_success < 1`.
+See [alerting runbook](../../runbooks/alerting.md) for exact setup.
+
+<details><summary>original task</summary>
+
 Two alerts, one channel:
 - **Uptime**: external monitor (Uptime Kuma elsewhere or a hosted free pinger) hits
   `https://api-otp.dikhanh.io.vn/healthz` every 60s; alert on down/recovered.
@@ -29,6 +41,8 @@ Two alerts, one channel:
 - **Disk > 80%**: Grafana-managed alert rule on `node_filesystem_avail_bytes` (query in the alerting
   runbook) -> Telegram. Disk is the single most likely way this node dies.
 - **Done-when:** a killed pod / a down endpoint fires a Telegram message, and recovery fires too.
+
+</details>
 
 ## P2 - correctness of the delivery + email paths
 

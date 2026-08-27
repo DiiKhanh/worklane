@@ -1,14 +1,25 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Send, ShieldCheck, TriangleAlert, Timer } from "lucide-react";
+import { Send, ShieldCheck, TriangleAlert, Timer, BarChart3 } from "lucide-react";
 import { useOverview } from "@/lib/queries/use-overview";
 import { StatCard } from "@/components/common/stat-card";
 import { CountUp } from "@/components/common/count-up";
+import { EmptyState } from "@/components/common/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function Kpis() {
-  const { data, isLoading } = useOverview();
+  const { data, isLoading, isError } = useOverview();
+
+  if (isError) {
+    return (
+      <EmptyState
+        icon={BarChart3}
+        title="Metrics unavailable"
+        description="Aggregate stats aren't served by the live API yet."
+      />
+    );
+  }
 
   if (isLoading || !data) {
     return (

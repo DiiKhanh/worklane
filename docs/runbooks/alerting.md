@@ -51,15 +51,24 @@ policy** to the `telegram` contact point, or add a nested policy matching label
 - Redpanda consumer-group lag > 1000 for 10m.
 
 ## 3. Uptime ping (is it up at all)
-The API now exposes a **public** `/healthz` through Traefik
+The API exposes a **public** `/healthz` through Traefik
 (`deploy/k8s/overlays/prod/ingressroute.yaml`): `GET https://api-otp.dikhanh.io.vn/healthz`
 returns `{"status":"ok"}` 200, unauthenticated, touches no MySQL/Redis.
 
-Point a free external monitor at it (an external box, not this node - a monitor on the same
-host dies with it):
-- Monitor: **HTTP GET `https://api-otp.dikhanh.io.vn/healthz`**, every 60s, expect **200**.
-- Options: Uptime Kuma on another box, or a hosted free pinger (UptimeRobot, Better Stack, etc.).
-- Alert channel: the **same Telegram bot** (`<bot-token>` + `<chat-id>`).
+Monitored by **Grafana Cloud Synthetic Monitoring** - Grafana's own probes hit the URL from
+*outside* the VPS (so a dead node is actually detected), and the failure metric feeds the same
+Telegram contact point. No extra account or self-hosted box.
+
+**a. The check** (Testing & synthetics -> Synthetics -> Checks -> Add check -> HTTP):
+- Job name: `otp-api-healthz` ; Target: `https://api-otp.dikhanh.io.vn/healthz`
+- Probe location: **Singapore** ; Frequency **60s** ; expect 2xx (default).
+- Leave the check's built-in "Alerting" **off** - routing is done by the rule below so it hits
+  Telegram, not the default email policy.
+
+**b. The alert rule** `otp-api-uptime-down` (Grafana-managed, routes to `telegram`):
+- Query A: `probe_success{job="otp-api-healthz"}` ; B: Reduce A `Last` ; C: **B IS BELOW 1**.
+- Pending period **2m** (two failed 60s probes) ; label `severity=critical`.
+- `probe_success` goes to 0 when the probe runs but the endpoint doesn't answer -> API down.
 
 ## Verify (done-when)
 - **Disk**: temporarily lower the rule threshold (e.g. IS ABOVE 1) -> it fires to Telegram ->
