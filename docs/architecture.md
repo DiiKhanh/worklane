@@ -228,13 +228,14 @@ erDiagram
 
 ---
 
-## 6. Monorepo, two deployables
+## 6. Monorepo, deployables
 
 ```mermaid
 flowchart LR
     subgraph repo["worklane (one Go module)"]
         subgraph services["services/"]
             A["otp-api<br/>main.go + internal/*"]
+            AUTH["auth-svc<br/>main.go + internal/*"]
             D["otp-dispatcher<br/>main.go + internal/*"]
             S["seed (CLI)"]
         end
@@ -246,11 +247,14 @@ flowchart LR
     end
 
     A --> P1 & P2 & P3
+    AUTH --> P1 & P3
     D --> P1 & P2
     S --> P1 & P3
     A -. "no code import<br/>(Kafka + schema only)" .- D
+    A -. "HTTP introspect<br/>(API keys)" .-> AUTH
 ```
 
-Services never import each other's `internal/` (Go enforces it). They meet only at the shared
-`pkg/contracts` event schema and the shared MySQL schema - which is exactly what makes each one
-independently deployable and, later, independently extractable into its own repo.
+Services never import each other's `internal/` (Go enforces it). otp-api and otp-dispatcher meet at
+the shared `pkg/contracts` event schema and the `otp` database; otp-api calls auth-svc over HTTP for
+API-key introspection. Those boundaries keep each service independently deployable and, later,
+independently extractable into its own repo.

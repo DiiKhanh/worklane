@@ -6,6 +6,7 @@ package http
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -79,7 +80,10 @@ func (h *Handlers) ListRequests(c *gin.Context) {
 	}
 	out := make([]requestDTO, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, requestDTO{ID: r.ID, Recipient: r.Recipient, Channel: r.Channel, State: r.State})
+		out = append(out, requestDTO{
+			ID: r.ID, Recipient: r.Recipient, Channel: r.Channel, State: r.State,
+			CreatedAt: r.CreatedAt.UTC(),
+		})
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -94,8 +98,39 @@ func (h *Handlers) ListDeliveryLogs(c *gin.Context) {
 	for _, l := range rows {
 		out = append(out, deliveryLogDTO{
 			RequestID: l.RequestID, Provider: l.Provider, Status: l.Status,
-			LatencyMillis: l.LatencyMillis, Error: l.Error,
+			LatencyMillis: l.LatencyMillis, Error: l.Error, CreatedAt: l.CreatedAt.UTC(),
 		})
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+func (h *Handlers) Stats(c *gin.Context) {
+	stats, err := h.repo.Stats(c.Request.Context(), c.GetString(tenantCtxKey), time.Now().UTC())
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, statsFromApp(stats))
+}
+
+func statsFromApp(stats app.Stats) statsDTO {
+	series := make([]statsPointDTO, 0, len(stats.Series))
+	for _, point := range stats.Series {
+		series = append(series, statsPointDTO{
+			T: point.T.UTC(), Requested: point.Requested, Sent: point.Sent,
+			Verified: point.Verified, Failed: point.Failed,
+		})
+	}
+	return statsDTO{
+		SentToday:        stats.SentToday,
+		VerifyRate:       stats.VerifyRate,
+		Failed:           stats.Failed,
+		P50LatencyMillis: stats.P50LatencyMillis,
+		Series:           series,
+		Funnel: statsFunnelDTO{
+			Requested: stats.Funnel.Requested,
+			Sent:      stats.Funnel.Sent,
+			Verified:  stats.Funnel.Verified,
+		},
+	}
 }

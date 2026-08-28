@@ -1,5 +1,11 @@
 # Productionize worklane on k3s - Implementation Plan
 
+> **CURRENT NOTE (2026-08-28):** Historical implementation plan. Current production state is tracked
+> in [vps-bringup](../../runbooks/vps-bringup.md) and
+> [vps-prod next steps](2026-08-26-vps-prod-next-steps.md): host is
+> `api-otp.dikhanh.io.vn`, dashboard is on Vercel, and Resend sends from
+> `no-reply@dikhanh.io.vn`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deploy the worklane walking skeleton (otp-api, auth-svc, otp-dispatcher + MySQL/Redis/Redpanda) to a self-hosted single-node k3s cluster, reachable at `https://api.otp.<domain>` via Cloudflare Tunnel, with images built by CI to GHCR and the dashboard on Vercel.

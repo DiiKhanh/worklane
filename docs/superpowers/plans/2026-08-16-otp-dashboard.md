@@ -1,5 +1,9 @@
 # OTP Dashboard Implementation Plan
 
+> **CURRENT NOTE (2026-08-28):** Historical implementation plan. Current code has live auth-svc
+> sign-in and `GET /v1/stats`; dashboard Overview reads live rolling 24h aggregates when deployed
+> with the matching otp-api.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the `worklane` developer dashboard - a polished dark-first Next.js app for the OTP/verification platform, rendered against a swappable mock/live data layer, with captured screenshots.

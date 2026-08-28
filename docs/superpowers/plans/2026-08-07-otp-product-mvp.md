@@ -1,9 +1,10 @@
 # OTP Product MVP Implementation Plan
 
-> **STATUS: ACTIVE (rewritten 2026-08-15).** This plan targets the current stack: a **monorepo of Gin
+> **STATUS: HISTORICAL (rewritten 2026-08-15).** This plan targets the then-current stack: a **monorepo of Gin
 > microservices**, each internally **hexagonal (ports & adapters)**, with **MySQL via GORM**,
 > **Redis**, **Kafka via IBM/sarama**, **Traefik** gateway, and **Kustomize** deploy. It supersedes the
-> earlier go-zero + Postgres + APISIX draft. Repository structure and the production→this-project
+> earlier go-zero + Postgres + APISIX draft. Current production also includes `auth-svc`; repository
+> structure and the production→this-project
 > concept mapping live in [../../reference/architecture-and-layout.md](../../reference/architecture-and-layout.md).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development or

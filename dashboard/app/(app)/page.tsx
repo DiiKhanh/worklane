@@ -24,8 +24,7 @@ export default function OverviewPage() {
 
       {isMock && (
         <p className="text-center text-xs text-muted-foreground">
-          Aggregate metrics are sample data - the live API exposes raw events;
-          a stats endpoint is planned.
+          Aggregate metrics are sample data in mock mode.
         </p>
       )}
     </div>

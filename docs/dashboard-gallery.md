@@ -8,7 +8,8 @@ to run it or re-capture these images.
 ## Overview
 
 KPIs (sent, verify rate, failed, p50 latency), a stacked volume chart by outcome,
-a requested → delivered → verified funnel, and a live activity feed.
+a requested → delivered → verified funnel, and a live activity feed. In live mode,
+the aggregate panels read tenant-scoped rolling 24h data from `/v1/stats`.
 
 ![Overview](assets/dashboard/overview-dark.png)
 
@@ -63,8 +64,8 @@ _Light: [playground-light.png](assets/dashboard/playground-light.png)_
 ## Roadmap screens
 
 Proposed surfaces laid out from shipped worklane patterns and driven by local
-fixtures. Each carries a dashed "not in the codebase yet" notice and appears in the
-sidebar with a `soon` tag. They are UI proposals, not wired to any API.
+fixtures. They are present in the dashboard UI with a `soon` tag, but are not backed by live
+backend APIs yet.
 
 ### Templates
 
@@ -95,8 +96,8 @@ _Light: [links-light.png](assets/dashboard/links-light.png)_
 
 ### Login
 
-The OTP loop applied to sign-in. Standalone (no shell); the real dashboard
-authenticates with a bearer key, not a session.
+Working sign-in against auth-svc. Standalone, outside the app shell; on success the dashboard stores
+the returned JWT and uses it as the Bearer token for live API calls.
 
 ![Login](assets/dashboard/login-dark.png)
 

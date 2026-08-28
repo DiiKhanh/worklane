@@ -119,14 +119,16 @@ Kafka between them is the core architectural decision: `otp-api` publishes `otp.
 independently in the dispatcher and is retryable; a permanent failure is routed to `otp.dlq`. This
 sync/async split is the strongest distributed-systems story in the project.
 
-## 5. What is NOT here yet (Phase 4-5)
+## 5. What came later (Phase 4-5)
 
-- No `docker-compose` stack, Traefik gateway, or Dockerfiles yet - so nothing runs *together* outside
-  tests. That is Phase 4, which also adds an end-to-end `send → verify` test (via a MailHog inbox) and
-  the local web UIs (Adminer, RedisInsight, Redpanda Console).
-- No seed CLI to mint an API key, and no dashboard. That is Phase 5.
+At the point this walkthrough was written, there was no `docker-compose` stack, Traefik gateway,
+Dockerfiles, seed CLI, or dashboard. Those have since landed:
 
-Everything above is written and tested in isolation; Phase 4 is where it first breathes as one system.
+- `deploy/compose/docker-compose.yml` runs the local stack with Adminer, RedisInsight, Redpanda
+  Console, MailHog, and Traefik.
+- `test/e2e` exercises the full `send -> email -> verify` path through the gateway.
+- `services/seed` provisions tenant/user/API-key data.
+- `dashboard/` is a live-capable Next.js app deployed separately to Vercel.
 
 ## 6. Epilogue: how this shape paid off when SMS arrived (Phase 5)
 

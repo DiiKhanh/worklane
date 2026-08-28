@@ -1,16 +1,19 @@
 # VPS prod - next steps
 
 Follow-ups after the initial bring-up (see [vps-bringup runbook](../../runbooks/vps-bringup.md)).
-Prod is live: API at `https://api-otp.dikhanh.io.vn`, real email via Resend, logs+metrics in
-Grafana Cloud. These items harden it toward the "OTP live **and stable**, operated solo" gate from
-the [prod-ops hardening spec](../specs/2026-08-25-prod-ops-hardening-design.md).
+Prod is live: API at `https://api-otp.dikhanh.io.vn`, dashboard at
+`https://worklane-six.vercel.app`, real email via Resend from `no-reply@dikhanh.io.vn`, and
+logs+metrics in Grafana Cloud. These items harden it toward the "OTP live **and stable**, operated
+solo" gate from the [prod-ops hardening spec](../specs/2026-08-25-prod-ops-hardening-design.md).
 
 Ordered by priority. Each item states its **done-when**.
 
 ## P1 - do soon (stability / stops noise)
 
-### 1. Backup CronJob is failing nightly until R2 exists
-The `mysql-backup` CronJob was applied but has no `r2-backup` secret, so it will fail every night.
+### 1. R2 backup + restore drill - PENDING
+The `mysql-backup` CronJob was applied, but the R2 setup and restore drill are still pending. Until
+the `r2-backup` secret exists, the CronJob will fail each night; either create the secret and prove a
+restore, or suspend the CronJob temporarily.
 **Step-by-step execution: [backup-r2 runbook](../../runbooks/backup-r2.md)** (secret keys, test job, restore drill).
 Pick one:
 - **Set up R2 now** (preferred): create a Cloudflare R2 bucket + S3 API token, then
@@ -46,18 +49,16 @@ Two alerts, one channel:
 
 ## P2 - correctness of the delivery + email paths
 
-### 3. Prove deploy.sh + rollback.sh
-Prod is the only k8s env, so the way back must be tested before it is needed.
-- Install `kustomize` on the VPS (deploy.sh uses `kustomize edit set image`).
-- Run `deploy/scripts/deploy.sh <sha>` to a newer built SHA, confirm the running image changes, then
-  `deploy/scripts/rollback.sh` and confirm it returns. Commit the overlay tag change so git records it.
+### 3. Prove deploy.sh + rollback.sh - DONE (2026-08-28)
+Prod is the only k8s env, so the way back was tested before it is needed.
+- `deploy/scripts/deploy.sh <sha>` moves the running image SHA and waits for rollouts.
+- `deploy/scripts/rollback.sh` successfully returns the services to the previous ReplicaSet.
 - **Done-when:** a real deploy and a real rollback each move the running SHA, verified.
 
-### 4. Verify `dikhanh.io.vn` on Resend (send to any recipient)
-Today the sandbox sender `onboarding@resend.dev` only delivers to the Resend account owner.
-- Add the SPF/DKIM DNS records Resend gives, on Cloudflare, and verify the domain.
-- Change `RESEND_FROM` in `deploy/k8s/base/config.yaml` to a `@dikhanh.io.vn` sender; re-apply.
-- **Done-when:** an OTP email is delivered to an arbitrary address, not just the account owner.
+### 4. Verify `dikhanh.io.vn` on Resend - DONE (2026-08-28)
+Resend is verified for `dikhanh.io.vn`, and production sends from `no-reply@dikhanh.io.vn`.
+- `RESEND_FROM` is set in `deploy/k8s/base/config.yaml`.
+- **Done-when:** an OTP email is delivered to an arbitrary address, not just the Resend account owner.
 
 ## P3 - product surface (separate tracks)
 
@@ -70,9 +71,18 @@ Deployed `dashboard/` (Next.js, root dir `dashboard`) to Vercel at
 domain (e.g. `otp.dikhanh.io.vn` CNAME to Vercel) instead of the `.vercel.app` URL.
 
 ### 6. SMS channel (Twilio)
-Add `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` to `worklane-secrets` and a real `TWILIO_FROM` in config;
-`/v1/otp/send` with `"channel":"sms"` should deliver.
-- **Done-when:** an SMS OTP is delivered and verified.
+The SMS code path exists. The chosen free/internal production smoke path is Twilio test credentials,
+using `TWILIO_FROM=+15005550006` and the real Twilio API URL. This exercises the API -> Kafka ->
+dispatcher -> Twilio adapter -> MySQL path without sending a real SMS or charging the account.
+**Step-by-step execution: [SMS Twilio test credentials runbook](../../runbooks/sms-twilio-test-credentials.md)**.
+- **Done-when:** a Twilio test-credential smoke writes a `provider=twilio,status=sent` delivery log in
+  production. A real handset receive-and-verify test remains a separate later live-SMS check.
+
+### 7. `/v1/stats` for dashboard Overview - CODE READY, PENDING PROD DEPLOY
+The code path adds a tenant-scoped `GET /v1/stats` endpoint and wires the dashboard live data source
+to it. Deploy otp-api plus dashboard to make live Overview show real rolling 24h aggregates.
+- **Done-when:** live dashboard Overview shows real tenant aggregates instead of the current
+  "Metrics unavailable" state.
 
 ## Known-harmless (no action unless it changes)
 

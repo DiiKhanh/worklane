@@ -58,14 +58,14 @@ export class LiveDataSource implements DataSource {
 
   async listRequests(): Promise<OtpRequest[]> {
     const rows = await this.get<
-      { id: string; recipient: string; channel: string; state: OtpRequest["state"] }[]
+      { id: string; recipient: string; channel: string; state: OtpRequest["state"]; created_at?: string }[]
     >("/v1/otp/requests");
     return rows.map((r) => ({
       id: r.id,
       recipient: r.recipient,
       channel: r.channel,
       state: r.state,
-      createdAt: "",
+      createdAt: r.created_at ?? "",
     }));
   }
 
@@ -77,6 +77,7 @@ export class LiveDataSource implements DataSource {
         status: string;
         latency_ms: number;
         error?: string;
+        created_at?: string;
       }[]
     >("/v1/delivery-logs");
     return rows.map((l) => ({
@@ -85,16 +86,33 @@ export class LiveDataSource implements DataSource {
       status: l.status === "failed" ? "failed" : "sent",
       latencyMs: l.latency_ms,
       error: l.error || undefined,
-      createdAt: "",
+      createdAt: l.created_at ?? "",
     }));
   }
 
   async getOverview(): Promise<Overview> {
-    // The API exposes no aggregate endpoint yet (see spec: Overview is mock-only
-    // until /v1/stats exists). Fail loudly rather than fabricate live numbers.
-    throw new Error(
-      "Overview aggregates are not available from the live API yet (no /v1/stats endpoint).",
-    );
+    const body = await this.get<{
+      sent_today: number;
+      verify_rate: number;
+      failed: number;
+      p50_latency_ms: number;
+      series: {
+        t: string;
+        requested: number;
+        sent: number;
+        verified: number;
+        failed: number;
+      }[];
+      funnel: { requested: number; sent: number; verified: number };
+    }>("/v1/stats");
+    return {
+      sentToday: body.sent_today,
+      verifyRate: body.verify_rate,
+      failed: body.failed,
+      p50LatencyMs: body.p50_latency_ms,
+      series: body.series,
+      funnel: body.funnel,
+    };
   }
 
   async send(recipient: string, channel: string): Promise<SendResult> {

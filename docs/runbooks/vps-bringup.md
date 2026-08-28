@@ -15,9 +15,9 @@ Bringing worklane OTP live on the single-node VPS. Companion to the approved spe
 | API host | **`api-otp.dikhanh.io.vn`** (single-level so Cloudflare Universal SSL covers it; `api.otp.` = 2 levels would need paid ACM) |
 | Expose | Cloudflare Tunnel (no open ports); edge TLS at Cloudflare, `cloudflared -> http://localhost:80` (loopback) -> k3s Traefik |
 | Runtime | k3s (built-in Traefik), containerd; **cgroup v2 required** (k8s v1.36 rejects v1) |
-| Email | Resend; sender `onboarding@resend.dev` (sandbox: only to account owner) until `dikhanh.io.vn` is verified |
+| Email | Resend; verified domain `dikhanh.io.vn`; production sender `no-reply@dikhanh.io.vn` |
 | Logs | Grafana Alloy -> Grafana Cloud (free); no local TSDB/log store (15GB disk) |
-| Scope | API only (no Vercel dashboard this pass) |
+| Scope | API on k3s, dashboard on Vercel |
 | Images | GHCR `ghcr.io/diikhanh/worklane-*`, **public** (anon pull, no `ghcr-pull` needed); pin `sha-<short>` |
 
 ## Progress
@@ -29,7 +29,11 @@ Bringing worklane OTP live on the single-node VPS. Companion to the approved spe
 - [x] **App deploy** - secrets (`worklane-jwt` Ed25519, `worklane-secrets`, placeholder `grafana-cloud`) + `kubectl apply -k overlays/prod` (pinned `sha-f0214ee`, host `api-otp.dikhanh.io.vn`). All 7 pods Running; disk 7.1G/18G.
 - [x] **Verify** - DB split correct (identity: tenants/users/api_keys; otp: otp_requests/delivery_logs/templates); public routing 401 on bad key/login; seed printed API key; **send OTP -> 202, real email delivered via Resend, verify code -> 200**.
 - [x] **Grafana Cloud** - real `grafana-cloud` secret (stack `magentagerbil3564`, region ap-southeast-1); Alloy shipping logs+metrics after fixing a `pods/log` RBAC gap (see gotchas). `forbidden count: 0`.
-- [ ] **Later** - tracked in [vps-prod next steps](../superpowers/plans/2026-08-26-vps-prod-next-steps.md): R2 backup, Telegram alerts (uptime + disk>80%), prove deploy/rollback, verify Resend domain, dashboard, SMS.
+- [x] **Alerting** - Grafana Cloud uptime + disk alerts route to Telegram and were verified fire/recovery end-to-end.
+- [x] **Deploy/rollback** - `deploy/scripts/deploy.sh` and `deploy/scripts/rollback.sh` were verified against production.
+- [x] **Resend domain** - `dikhanh.io.vn` is verified, and production sends from `no-reply@dikhanh.io.vn`.
+- [x] **Dashboard** - Vercel dashboard is live at `https://worklane-six.vercel.app` with live API data.
+- [ ] **Later** - tracked in [vps-prod next steps](../superpowers/plans/2026-08-26-vps-prod-next-steps.md): R2 backup + restore drill, SMS production smoke via Twilio test credentials, `/v1/stats`.
 
 ## Gotchas hit
 

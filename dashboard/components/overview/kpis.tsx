@@ -16,7 +16,7 @@ export function Kpis() {
       <EmptyState
         icon={BarChart3}
         title="Metrics unavailable"
-        description="Aggregate stats aren't served by the live API yet."
+        description="Aggregate stats could not be loaded."
       />
     );
   }
@@ -33,7 +33,7 @@ export function Kpis() {
 
   const cards = [
     {
-      label: "Sent today",
+      label: "Sent 24h",
       icon: Send,
       accent: "var(--state-sent)",
       value: <CountUp value={data.sentToday} />,

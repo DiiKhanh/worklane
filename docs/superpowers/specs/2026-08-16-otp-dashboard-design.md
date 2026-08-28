@@ -1,7 +1,7 @@
 # OTP Dashboard - Design Spec
 
 Date: 2026-08-16
-Status: Approved (brainstorming)
+Status: Historical design note; `/v1/stats` was added in code by 2026-08-28
 Supersedes/extends: §8 of [2026-08-06-otp-verification-platform-design.md](./2026-08-06-otp-verification-platform-design.md)
 and the dashboard row of [2026-08-07-otp-mvp-scope.md](./2026-08-07-otp-mvp-scope.md).
 
@@ -52,15 +52,13 @@ dashboard/lib/queries/*  // useQuery/useMutation hooks that call DataSource
 - `ApiKey`   `{ id, tenantId, status }`
 - `OtpRequest` `{ id, recipient (masked), channel, state }`
 - `DeliveryLog` `{ requestId, provider, status, latencyMs, error? }`
-- `Overview` (aggregates) - derived, see known gap below.
+- `Overview` (aggregates) - originally derived in mock mode; live mode now reads `/v1/stats`.
 
-### Known gap (surfaced tradeoff)
+### Original known gap, now resolved in code
 
-Overview KPIs/charts need aggregates the API does **not** expose today (only raw lists exist).
+Overview KPIs/charts originally needed aggregates the API did **not** expose.
 - Mock mode: rich aggregates provided directly.
-- Live mode (later): either compute client-side from the list endpoints, or add a `/v1/stats`
-  endpoint. Until then, Overview aggregate tiles are **mock-only** and marked as such in the UI so
-  they never pretend to be live data.
+- Live mode: `GET /v1/stats` now provides tenant-scoped rolling 24h aggregates.
 
 ## 4. Screens (5)
 
@@ -104,5 +102,5 @@ one short GIF of the playground loop.
 
 - Dashboard auth (NextAuth/Auth.js) and self-serve API-key create/revoke.
 - Real-time push (SSE/WebSocket) - MVP uses polling.
-- `/v1/stats` aggregate endpoint (Overview stays mock-only until it exists).
+- Older builds without `/v1/stats` keep Overview mock-only.
 - Vercel deployment wiring (the app is built deploy-ready but deploy is a separate step).

@@ -98,8 +98,41 @@ func (r *Repo) ListDeliveryLogs(ctx context.Context, tenantID string, limit int)
 	for _, row := range rows {
 		out = append(out, app.DeliveryLog{
 			RequestID: row.RequestID, Provider: row.Provider, Status: row.Status,
-			LatencyMillis: row.LatencyMs, Error: row.Error,
+			LatencyMillis: row.LatencyMs, Error: row.Error, CreatedAt: row.CreatedAt,
 		})
 	}
 	return out, nil
+}
+
+func (r *Repo) Stats(ctx context.Context, tenantID string, now time.Time) (app.Stats, error) {
+	now = now.UTC()
+	windowStart := now.Add(-24 * time.Hour)
+
+	var requestRows []otpRequestRow
+	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND created_at >= ? AND created_at <= ?", tenantID, windowStart, now).
+		Order("created_at ASC").Find(&requestRows).Error; err != nil {
+		return app.Stats{}, fmt.Errorf("mysql: stats requests: %w", err)
+	}
+	requests := make([]app.Request, 0, len(requestRows))
+	for _, row := range requestRows {
+		requests = append(requests, app.Request{
+			ID: row.ID, TenantID: row.TenantID, Recipient: row.RecipientMasked,
+			Channel: row.Channel, State: row.State, CreatedAt: row.CreatedAt,
+		})
+	}
+
+	var logRows []deliveryLogRow
+	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND created_at >= ? AND created_at <= ?", tenantID, windowStart, now).
+		Order("created_at ASC").Find(&logRows).Error; err != nil {
+		return app.Stats{}, fmt.Errorf("mysql: stats delivery logs: %w", err)
+	}
+	logs := make([]app.DeliveryLog, 0, len(logRows))
+	for _, row := range logRows {
+		logs = append(logs, app.DeliveryLog{
+			RequestID: row.RequestID, Provider: row.Provider, Status: row.Status,
+			LatencyMillis: row.LatencyMs, Error: row.Error, CreatedAt: row.CreatedAt,
+		})
+	}
+
+	return app.ComputeStats(requests, logs, now), nil
 }

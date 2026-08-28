@@ -1,7 +1,8 @@
 # Backup runbook - MySQL -> Cloudflare R2
 
-Make the nightly `mysql-backup` CronJob actually work (today it fails every night
-because the `r2-backup` secret does not exist). Part of P1 in
+Status: **PENDING**. Make the nightly `mysql-backup` CronJob actually work by creating the
+`r2-backup` secret, running a one-off backup job, and proving a restore into a scratch MySQL. Until
+that is done, either expect the CronJob to fail nightly or suspend it temporarily. Part of P1 in
 [vps-prod next steps](../superpowers/plans/2026-08-26-vps-prod-next-steps.md).
 
 The CronJob is `deploy/k8s/base/backup/backup-cronjob.yaml`: an initContainer runs

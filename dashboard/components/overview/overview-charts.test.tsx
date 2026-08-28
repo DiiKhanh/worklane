@@ -21,7 +21,7 @@ describe("OverviewCharts", () => {
     expect(screen.getByText("Verification volume")).toBeInTheDocument();
     expect(screen.getByText("Conversion funnel")).toBeInTheDocument();
     expect(
-      screen.getAllByText("Not available from the live API yet"),
+      screen.getAllByText("Stats could not be loaded"),
     ).toHaveLength(2);
   });
 
@@ -33,7 +33,7 @@ describe("OverviewCharts", () => {
     });
     render(<OverviewCharts />);
     expect(
-      screen.queryByText("Not available from the live API yet"),
+      screen.queryByText("Stats could not be loaded"),
     ).not.toBeInTheDocument();
   });
 });

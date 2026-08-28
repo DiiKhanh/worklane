@@ -56,7 +56,19 @@ worklane/
 │   │           └── outbound/
 │   │               ├── redisstore/ #       CodeStore + Counter (Redis)
 │   │               ├── mysqlrepo/  #       Repo (GORM models + queries)
-│   │               └── kafkabus/   #       Publisher (otp.requested)
+│   │               └── identity/   #       auth-svc introspection client + Redis cache
+│   │
+│   ├── auth-svc/                   # ── identity HTTP microservice (Gin) ──
+│   │   ├── main.go
+│   │   ├── Dockerfile
+│   │   └── internal/
+│   │       ├── domain/             #     users, API keys, auth errors
+│   │       ├── app/                #     login, API-key CRUD, introspection ports
+│   │       └── adapters/
+│   │           ├── inbound/http/   #     /auth/login, /auth/me, /auth/api-keys, /internal/introspect
+│   │           └── outbound/
+│   │               ├── mysqlrepo/  #       identity DB persistence
+│   │               └── ratelimit/  #       Redis-backed login limiter
 │   │
 │   ├── otp-dispatcher/             # ── async Kafka-consumer microservice (sarama) ──
 │   │   ├── main.go
@@ -64,35 +76,38 @@ worklane/
 │   │   └── internal/
 │   │       ├── app/                #     dispatch use case (render + send + log)
 │   │       └── adapters/
-│   │           ├── inbound/kafka/  #     consumer (driving adapter)
+│   │           ├── inbound/consumer/ #   Kafka consumer (driving adapter)
 │   │           └── outbound/
 │   │               ├── resendmail/ #       EmailProvider (Resend HTTP)
+│   │               ├── smtpmail/   #       EmailProvider (SMTP/MailHog)
+│   │               ├── twiliosms/  #       SMSProvider (Twilio HTTP)
 │   │               ├── mysqlrepo/  #       delivery-log writes
-│   │               └── kafkabus/   #       Publisher (otp.sent / otp.failed / otp.dlq)
 │   │
-│   ├── seed/                       # CLI (create tenant + API key) - short-lived, not a server
-│   │   └── main.go
+│   ├── seed/                       # CLI (create tenant + user + API key) - short-lived, not a server
+│   │   ├── main.go
+│   │   └── Dockerfile
 │   # future services: chat-api/, chat-worker/, crm-api/ ...
 │
 ├── pkg/                            # SHARED code, importable by ANY service
 │   ├── platform/                   #   infra wrappers (mirror prod "internal shared module")
 │   │   ├── config/                 #     typed config loader (env + file)
-│   │   ├── httpserver/             #     Gin engine bootstrap, common middleware, error→HTTP mapping
 │   │   ├── kafka/                  #     sarama producer/consumer wrapper + typed envelope
+│   │   ├── metrics/                #     Prometheus middleware + /metrics handler
 │   │   ├── redis/                  #     client + typed key builders
-│   │   ├── mysql/                  #     pool + migration runner
-│   │   └── logger/                 #     structured JSON logger
+│   │   └── mysql/                  #     pool + migration runner
 │   └── contracts/                  #   SHARED KERNEL: cross-service event schemas + shared enums
 │       └── otp/                    #     otp.requested / otp.sent / otp.failed payload types, State
 │
 ├── db/                             # per-service SQL migrations (golang-migrate .up/.down files)
+│   ├── identity/migrations/
 │   └── otp/migrations/
 ├── deploy/
 │   ├── compose/docker-compose.yml  # local stack: traefik, redis, mysql, redpanda, otp services
 │   ├── traefik/                    # dynamic config: routers + middlewares (ratelimit, cors)
-│   └── kustomize/
+│   └── k8s/
 │       ├── base/
 │       │   ├── otp-api/            # per-service manifests (Deployment, Service, ...)
+│       │   ├── auth-svc/
 │       │   └── otp-dispatcher/
 │       └── overlays/prod/          # k3s prod overlay
 ├── dashboard/                      # Next.js app (deployed separately to Vercel)
@@ -141,8 +156,8 @@ Two rules a beginner should memorize:
   hard isolation without multi-module ceremony.
 - **Network-only communication.** Services share **zero runtime state**. The only things they hold in
   common are compiled-in libraries (`pkg/platform`) and event schema types (`pkg/contracts`). Actual
-  inter-service traffic is **Kafka events**. `otp-api` publishes `otp.requested`; `otp-dispatcher`
-  consumes it. Neither imports the other.
+  inter-service traffic is Kafka events between `otp-api` and `otp-dispatcher`, plus the internal HTTP
+  introspection call from `otp-api` to `auth-svc`. No service imports another service's `internal/`.
 - **`pkg/contracts` is the integration seam.** Both sides marshal/unmarshal the same event payload
   types defined once in `pkg/contracts/otp`. Changing an event is a deliberate contract change visible
   to every consumer - exactly how you want cross-service coupling to behave.
@@ -154,6 +169,7 @@ synchronous request path separate from the asynchronous delivery path):
 
 | Service | Kind | Drives via | Publishes | Consumes |
 |---------|------|-----------|-----------|----------|
+| `auth-svc` | Gin HTTP | dashboard login/API-key management; internal introspection | - | - |
 | `otp-api` | Gin HTTP | client requests through Traefik | `otp.requested` | - |
 | `otp-dispatcher` | sarama consumer | Kafka messages | `otp.sent` / `otp.failed` / `otp.dlq` | `otp.requested` |
 

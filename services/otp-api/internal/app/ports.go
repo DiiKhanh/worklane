@@ -33,6 +33,7 @@ type DeliveryLog struct {
 	Status        string
 	LatencyMillis int64
 	Error         string
+	CreatedAt     time.Time
 }
 
 // Request is the app-layer view of an otp_requests row, decoupled from the domain
@@ -69,6 +70,7 @@ type Repo interface {
 	UpdateState(ctx context.Context, id, to string) error
 	ListRequests(ctx context.Context, tenantID string, limit int) ([]Request, error)
 	ListDeliveryLogs(ctx context.Context, tenantID string, limit int) ([]DeliveryLog, error)
+	Stats(ctx context.Context, tenantID string, now time.Time) (Stats, error)
 }
 
 // Publisher publishes domain events to Kafka. The topic is passed in (config-driven),

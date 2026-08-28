@@ -30,6 +30,7 @@ func NewRouter(svc OTPService, repo app.Repo, verifier *security.Verifier, intro
 		v1.POST("/otp/verify", h.Verify)
 		v1.GET("/otp/requests", h.ListRequests)
 		v1.GET("/delivery-logs", h.ListDeliveryLogs)
+		v1.GET("/stats", h.Stats)
 	}
 	return r
 }

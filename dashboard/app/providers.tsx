@@ -1,6 +1,7 @@
 "use client";
 
 import { ThemeProvider } from "next-themes";
+import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,6 +12,7 @@ import { useUIStore } from "@/lib/store/ui";
  * dark-first). Server data lives only in the TanStack Query cache.
  */
 export function Providers({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -21,7 +23,7 @@ export function Providers({ children }: { children: ReactNode }) {
             if (error instanceof Error && /\b401\b/.test(error.message)) {
               localStorage.removeItem("worklane-token");
               useUIStore.getState().setToken("");
-              if (typeof window !== "undefined") window.location.assign("/login");
+              router.replace("/login");
             }
           },
         }),

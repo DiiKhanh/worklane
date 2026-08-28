@@ -58,6 +58,7 @@ export function DataTable<TData, TValue>({
       ]
     : columns;
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table exposes imperative helpers that React Compiler intentionally skips.
   const table = useReactTable({
     data,
     columns: cols,

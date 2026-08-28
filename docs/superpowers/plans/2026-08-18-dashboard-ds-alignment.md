@@ -1,5 +1,9 @@
 # Dashboard Design-System Alignment Implementation Plan
 
+> **CURRENT NOTE (2026-08-28):** Historical implementation plan. The dashboard now has working
+> auth-svc sign-in and the roadmap screens exist in the UI; current behavior is summarized in
+> [dashboard gallery](../../dashboard-gallery.md) and `dashboard/README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add the request-detail interaction and the Templates / Links / Campaigns / Login roadmap screens to the worklane dashboard, matching the extracted design system in the repo's real stack.

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	otphttp "github.com/duykhanh/worklane/services/otp-api/internal/adapters/inbound/http"
 	"github.com/duykhanh/worklane/services/otp-api/internal/app"
@@ -28,7 +29,10 @@ func (f *fakeSvc) Send(_ context.Context, in app.SendInput) (app.SendResult, err
 }
 func (f *fakeSvc) Verify(context.Context, app.VerifyInput) error { return f.verifyErr }
 
-type fakeRepo struct{}
+type fakeRepo struct {
+	stats           app.Stats
+	lastStatsTenant string
+}
 
 func (f *fakeRepo) InsertRequest(context.Context, app.Request) error  { return nil }
 func (f *fakeRepo) UpdateState(context.Context, string, string) error { return nil }
@@ -37,6 +41,10 @@ func (f *fakeRepo) ListRequests(context.Context, string, int) ([]app.Request, er
 }
 func (f *fakeRepo) ListDeliveryLogs(context.Context, string, int) ([]app.DeliveryLog, error) {
 	return nil, nil
+}
+func (f *fakeRepo) Stats(_ context.Context, tenantID string, _ time.Time) (app.Stats, error) {
+	f.lastStatsTenant = tenantID
+	return f.stats, nil
 }
 
 // stubIntrospector resolves any opaque key to tenant t1, so the API-key auth branch passes
@@ -139,5 +147,65 @@ func TestHealthz_NoAuth_200(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "ok") {
 		t.Fatalf("want status ok in body, got %s", rr.Body.String())
+	}
+}
+
+func TestStats_ValidKey_ReturnsTenantStats(t *testing.T) {
+	bucket := time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{stats: app.Stats{
+		SentToday:        2,
+		VerifyRate:       0.5,
+		Failed:           1,
+		P50LatencyMillis: 123,
+		Series: []app.StatsPoint{
+			{T: bucket, Requested: 1, Sent: 2, Verified: 1, Failed: 0},
+		},
+		Funnel: app.StatsFunnel{Requested: 4, Sent: 3, Verified: 1},
+	}}
+	h := newServer(&fakeSvc{}, repo)
+	rr := do(t, h, "GET", "/v1/stats", testKey, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if repo.lastStatsTenant != "t1" {
+		t.Fatalf("stats tenant = %q, want t1", repo.lastStatsTenant)
+	}
+	var out struct {
+		SentToday        int64   `json:"sent_today"`
+		VerifyRate       float64 `json:"verify_rate"`
+		Failed           int64   `json:"failed"`
+		P50LatencyMillis int64   `json:"p50_latency_ms"`
+		Series           []struct {
+			T         string `json:"t"`
+			Requested int64  `json:"requested"`
+			Sent      int64  `json:"sent"`
+			Verified  int64  `json:"verified"`
+			Failed    int64  `json:"failed"`
+		} `json:"series"`
+		Funnel struct {
+			Requested int64 `json:"requested"`
+			Sent      int64 `json:"sent"`
+			Verified  int64 `json:"verified"`
+		} `json:"funnel"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode stats response: %v", err)
+	}
+	if out.SentToday != 2 || out.VerifyRate != 0.5 || out.Failed != 1 || out.P50LatencyMillis != 123 {
+		t.Fatalf("unexpected stats response: %+v", out)
+	}
+	if len(out.Series) != 1 || out.Series[0].T != "2026-08-28T08:00:00Z" {
+		t.Fatalf("unexpected series: %+v", out.Series)
+	}
+	if out.Funnel.Requested != 4 || out.Funnel.Sent != 3 || out.Funnel.Verified != 1 {
+		t.Fatalf("unexpected funnel: %+v", out.Funnel)
+	}
+}
+
+func TestStats_NoKey_Returns401(t *testing.T) {
+	h := newServer(&fakeSvc{}, validRepo())
+	rr := do(t, h, "GET", "/v1/stats", "", "")
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 without key, got %d", rr.Code)
 	}
 }

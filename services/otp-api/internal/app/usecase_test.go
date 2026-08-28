@@ -45,6 +45,7 @@ func (f *fakeRepo) ListRequests(context.Context, string, int) ([]Request, error)
 func (f *fakeRepo) ListDeliveryLogs(context.Context, string, int) ([]DeliveryLog, error) {
 	return nil, nil
 }
+func (f *fakeRepo) Stats(context.Context, string, time.Time) (Stats, error) { return Stats{}, nil }
 
 type fakePub struct {
 	events []string

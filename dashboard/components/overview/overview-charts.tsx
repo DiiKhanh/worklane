@@ -7,7 +7,7 @@ import { FunnelChart } from "@/components/charts/funnel";
 import { Panel } from "@/components/common/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Shown in place of a chart when useOverview errors (live API has no /v1/stats yet).
+// Shown in place of a chart when useOverview errors.
 // className carries the height so the panel doesn't collapse / shift vs. the skeleton.
 function Unavailable({ className }: { className?: string }) {
   return (
@@ -16,7 +16,7 @@ function Unavailable({ className }: { className?: string }) {
     >
       <BarChart3 className="size-5 text-muted-foreground" />
       <p className="text-sm text-muted-foreground">
-        Not available from the live API yet
+        Stats could not be loaded
       </p>
     </div>
   );

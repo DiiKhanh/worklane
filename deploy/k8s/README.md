@@ -23,6 +23,11 @@ Replace the placeholder values. `<pw>` is the MySQL root password; the DSNs embe
       --from-literal=TWILIO_ACCOUNT_SID='<twilio-sid>' \
       --from-literal=TWILIO_AUTH_TOKEN='<twilio-token>'
 
+For a free/internal SMS smoke, use Twilio **test credentials** for the two Twilio values above. The
+base ConfigMap already sets `TWILIO_FROM="+15005550006"`, which is Twilio's magic valid sender for
+test credentials. See `docs/runbooks/sms-twilio-test-credentials.md` before patching an existing
+production secret.
+
     # JWT keypair (reuse the local dev keypair or generate a fresh one):
     kubectl -n worklane create secret generic worklane-jwt \
       --from-file=auth_priv.pem=deploy/compose/secrets/auth_priv.pem \
@@ -97,7 +102,8 @@ Create an R2 bucket + an S3-compatible API token, then:
       --from-literal=R2_ENDPOINT='<r2-s3-endpoint>' \
       --from-literal=R2_BUCKET='<r2-bucket>' \
       --from-literal=AWS_ACCESS_KEY_ID='<r2-access-key>' \
-      --from-literal=AWS_SECRET_ACCESS_KEY='<r2-secret-key>'
+      --from-literal=AWS_SECRET_ACCESS_KEY='<r2-secret-key>' \
+      --from-literal=AWS_DEFAULT_REGION='auto'
 
 ## Disk guardrails (host)
 
