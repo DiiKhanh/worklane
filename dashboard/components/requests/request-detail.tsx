@@ -87,9 +87,11 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="group/row flex items-center justify-between gap-3 border-t border-border/70 py-2.5 first:border-t-0">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="inline-flex items-center gap-1.5">{children}</span>
+    <div className="group/row flex flex-wrap items-start justify-between gap-x-3 gap-y-1 border-t border-border/70 py-2.5 first:border-t-0">
+      <span className="shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="inline-flex min-w-0 max-w-full flex-1 items-center justify-end gap-1.5 text-right break-all">
+        {children}
+      </span>
     </div>
   );
 }
@@ -120,15 +122,21 @@ export function RequestDetail({
         action={<StateBadge state={request.state} />}
       />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         <Panel title="Lifecycle" description="Events emitted for this code">
           <Timeline request={request} log={log} />
         </Panel>
         <Panel title="Attributes">
           <div className="grid">
             <Field label="Request id">
-              <span className="font-mono text-[13px]">{request.id}</span>
-              <CopyButton value={request.id} label="Copy request id" />
+              <span className="min-w-0 font-mono text-[13px] break-all">
+                {request.id}
+              </span>
+              <CopyButton
+                value={request.id}
+                label="Copy request id"
+                className="shrink-0"
+              />
             </Field>
             <Field label="Recipient">
               <span className="font-mono text-[13px] text-muted-foreground">
