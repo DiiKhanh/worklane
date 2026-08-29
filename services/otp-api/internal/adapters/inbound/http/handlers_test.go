@@ -56,7 +56,7 @@ func (stubIntrospector) Introspect(context.Context, string) (string, error) { re
 func newServer(svc otphttp.OTPService, repo app.Repo) http.Handler {
 	// These tests authenticate with an opaque API key, which never reaches the JWT branch,
 	// so a nil verifier is sufficient; the introspector stub resolves the key to a tenant.
-	return otphttp.NewRouter(svc, repo, nil, stubIntrospector{})
+	return otphttp.NewRouter(svc, repo, nil, nil, stubIntrospector{})
 }
 
 const testKey = "testkey"

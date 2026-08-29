@@ -1,12 +1,19 @@
 import type { DataSource } from "./source";
 import type {
+  AddVersionInput,
   ApiKey,
+  CreateTemplateInput,
   DeliveryLog,
   Overview,
   OtpRequest,
   OtpState,
   OverviewSeriesPoint,
+  PreviewInput,
+  PreviewResult,
   SendResult,
+  Template,
+  TemplateDetail,
+  TemplateVersion,
   VerifyResult,
 } from "./types";
 
@@ -121,6 +128,42 @@ function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
 
+/**
+ * Mirrors the backend pkg/templating allowlist: only {{code}} and {{expiry}} are
+ * substituted (with sample values), unknown tokens are left untouched. Keeping the
+ * semantics identical means the mock preview matches what the live preview renders.
+ */
+const PREVIEW_VARS: Record<string, string> = { code: "123456", expiry: "5 minutes" };
+function renderPreview(text: string): string {
+  return text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (m, name: string) =>
+    name in PREVIEW_VARS ? PREVIEW_VARS[name] : m,
+  );
+}
+
+function buildTemplates(now: number): { templates: Template[]; versions: Record<string, TemplateVersion[]> } {
+  const seedVersion = (id: string, subject: string, body: string): TemplateVersion => ({
+    id,
+    versionNo: 1,
+    subject,
+    body,
+    status: "published",
+    note: "seed",
+    createdBy: "system",
+    createdAt: iso(now - 3 * 24 * HOUR),
+  });
+  const templates: Template[] = [
+    { id: "tpl_email_en", name: "OTP email", channel: "email", locale: "en", status: "active", activeVersionId: "v_email_en_1", updatedAt: iso(now - 2 * HOUR) },
+    { id: "tpl_sms_en", name: "OTP SMS", channel: "sms", locale: "en", status: "active", activeVersionId: "v_sms_en_1", updatedAt: iso(now - 24 * HOUR) },
+    { id: "tpl_email_vi", name: "OTP email", channel: "email", locale: "vi", status: "active", activeVersionId: "v_email_vi_1", updatedAt: iso(now - 3 * 24 * HOUR) },
+  ];
+  const versions: Record<string, TemplateVersion[]> = {
+    tpl_email_en: [seedVersion("v_email_en_1", "Your verification code", "Your verification code is {{code}}. It expires in {{expiry}}.")],
+    tpl_sms_en: [seedVersion("v_sms_en_1", "", "Your verification code is {{code}}. It expires in {{expiry}}.")],
+    tpl_email_vi: [seedVersion("v_email_vi_1", "Mã xác thực worklane", "Mã xác thực của bạn là {{code}}. Hết hạn sau {{expiry}}.")],
+  };
+  return { templates, versions };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((res) => setTimeout(res, ms));
 }
@@ -137,12 +180,18 @@ export class MockDataSource implements DataSource {
   private readonly fixtures: Fixtures;
   private readonly inflight: { log: DeliveryLog; sentAt: number }[];
   private readonly codes = new Map<string, string>();
+  private readonly templates: Template[];
+  private readonly versions: Record<string, TemplateVersion[]>;
+  private seq = 0;
 
   constructor(opts: Options = {}) {
     this.realClock = !opts.now;
     this.now = opts.now ?? (() => Date.now());
     this.t0 = this.now();
     this.fixtures = buildFixtures(this.t0);
+    const tpl = buildTemplates(this.t0);
+    this.templates = tpl.templates;
+    this.versions = tpl.versions;
     // Three deliveries that "land" a few seconds apart after construction.
     const r = rng(0x1234abcd);
     this.inflight = [4000, 9000, 16000].map((offset) => ({
@@ -187,6 +236,7 @@ export class MockDataSource implements DataSource {
   }
 
   async send(recipient: string, channel: string): Promise<SendResult> {
+    // locale is accepted on the interface; the mock's rendering does not vary by locale.
     await this.latency();
     const r = rng((Date.now() ^ recipient.length) >>> 0);
     const code = String(100000 + Math.floor(r() * 900000));
@@ -215,6 +265,92 @@ export class MockDataSource implements DataSource {
       return { ok: true, status: "verified" };
     }
     return { ok: false, status: "mismatch" };
+  }
+
+  // --- Template Studio ---
+
+  private nextId(prefix: string): string {
+    this.seq += 1;
+    return `${prefix}_${this.seq}_${Math.floor(this.now()).toString(36)}`;
+  }
+
+  async listTemplates(): Promise<Template[]> {
+    await this.latency();
+    return this.templates;
+  }
+
+  async getTemplate(id: string): Promise<TemplateDetail> {
+    await this.latency();
+    const template = this.templates.find((t) => t.id === id);
+    if (!template) throw new Error(`template not found: ${id}`);
+    const versions = [...(this.versions[id] ?? [])].sort((a, b) => b.versionNo - a.versionNo);
+    return { template, versions };
+  }
+
+  async createTemplate(input: CreateTemplateInput): Promise<Template> {
+    await this.latency();
+    const id = this.nextId("tpl");
+    const versionId = this.nextId("v");
+    const template: Template = {
+      id,
+      name: input.name,
+      channel: input.channel,
+      locale: input.locale,
+      status: "active",
+      activeVersionId: "",
+      updatedAt: iso(this.now()),
+    };
+    this.templates.unshift(template);
+    this.versions[id] = [
+      {
+        id: versionId,
+        versionNo: 1,
+        subject: input.subject,
+        body: input.body,
+        status: "draft",
+        note: input.note ?? "",
+        createdBy: "you",
+        createdAt: iso(this.now()),
+      },
+    ];
+    return template;
+  }
+
+  async addVersion(id: string, input: AddVersionInput): Promise<TemplateVersion> {
+    await this.latency();
+    const list = this.versions[id] ?? [];
+    const nextNo = list.reduce((max, v) => Math.max(max, v.versionNo), 0) + 1;
+    const version: TemplateVersion = {
+      id: this.nextId("v"),
+      versionNo: nextNo,
+      subject: input.subject,
+      body: input.body,
+      status: "draft",
+      note: input.note ?? "",
+      createdBy: "you",
+      createdAt: iso(this.now()),
+    };
+    this.versions[id] = [...list, version];
+    return version;
+  }
+
+  async publishVersion(id: string, versionId: string): Promise<void> {
+    await this.latency();
+    const list = this.versions[id];
+    const template = this.templates.find((t) => t.id === id);
+    if (!list || !template) throw new Error(`template not found: ${id}`);
+    this.versions[id] = list.map((v) => {
+      if (v.id === versionId) return { ...v, status: "published" };
+      if (v.status === "published") return { ...v, status: "superseded" };
+      return v;
+    });
+    template.activeVersionId = versionId;
+    template.updatedAt = iso(this.now());
+  }
+
+  async previewTemplate(input: PreviewInput): Promise<PreviewResult> {
+    await this.latency();
+    return { subject: renderPreview(input.subject), body: renderPreview(input.body) };
   }
 }
 

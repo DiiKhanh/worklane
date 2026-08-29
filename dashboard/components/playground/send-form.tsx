@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence, motion } from "motion/react";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CopyButton } from "@/components/common/copy-button";
 import { PhoneInput } from "@/components/common/phone-input";
+import { SimpleSelect } from "@/components/common/simple-select";
 
 export function SendForm({
   channel,
@@ -20,6 +22,7 @@ export function SendForm({
   onSent?: (recipient: string, code: string) => void;
 }) {
   const send = useSend();
+  const [locale, setLocale] = useState("en");
   const {
     control,
     register,
@@ -32,7 +35,7 @@ export function SendForm({
   });
 
   const onSubmit = handleSubmit((values) =>
-    send.mutate({ recipient: values.recipient, channel }),
+    send.mutate({ recipient: values.recipient, channel, locale }),
   );
   const result = send.data;
 
@@ -66,6 +69,19 @@ export function SendForm({
         {errors.recipient && (
           <p className="text-xs text-destructive">{errors.recipient.message}</p>
         )}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="send-locale">Locale</Label>
+        <SimpleSelect
+          id="send-locale"
+          value={locale}
+          onValueChange={setLocale}
+          options={[
+            { value: "en", label: "en - English" },
+            { value: "vi", label: "vi - Tiếng Việt" },
+          ]}
+        />
       </div>
 
       <Button type="submit" disabled={send.isPending} className="w-full">

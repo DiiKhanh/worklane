@@ -83,3 +83,54 @@ describe("LiveDataSource.getOverview", () => {
     });
   });
 });
+
+describe("LiveDataSource templates", () => {
+  it("previewTemplate POSTs to /v1/templates/preview and returns the rendered result", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ subject: "Code 123456", body: "expires 5 minutes" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ds = new LiveDataSource({ baseUrl: "http://x", getToken: () => "jwt" });
+    const out = await ds.previewTemplate({ channel: "email", subject: "Code {{code}}", body: "expires {{expiry}}" });
+    expect(out.subject).toBe("Code 123456");
+    expect(out.body).toBe("expires 5 minutes");
+    expect(fetchMock.mock.calls[0][0]).toContain("/v1/templates/preview");
+  });
+
+  it("listTemplates maps snake_case JSON to camelCase", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { id: "t1", name: "OTP email", channel: "email", locale: "en", status: "active", active_version_id: "v1", updated_at: "2026-08-29T00:00:00Z" },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ds = new LiveDataSource({ baseUrl: "http://x", getToken: () => "jwt" });
+    const [t] = await ds.listTemplates();
+    expect(t).toEqual({ id: "t1", name: "OTP email", channel: "email", locale: "en", status: "active", activeVersionId: "v1", updatedAt: "2026-08-29T00:00:00Z" });
+  });
+
+  it("previewTemplate surfaces the backend error message on 400", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "templating: unknown variable: \"name\"" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ds = new LiveDataSource({ baseUrl: "http://x", getToken: () => "jwt" });
+    await expect(ds.previewTemplate({ channel: "email", subject: "s", body: "{{name}}" })).rejects.toThrow(/unknown variable/);
+  });
+});
+
+describe("LiveDataSource.send locale", () => {
+  it("posts the chosen locale in the send body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ request_id: "r1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const ds = new LiveDataSource({ baseUrl: "http://x", getToken: () => "jwt" });
+    await ds.send("d@e.com", "email", "vi");
+    const bodySent = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(bodySent.locale).toBe("vi");
+    expect(bodySent.channel).toBe("email");
+  });
+});

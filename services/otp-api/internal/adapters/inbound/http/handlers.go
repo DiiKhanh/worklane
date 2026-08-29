@@ -46,6 +46,7 @@ func (h *Handlers) Send(c *gin.Context) {
 		TenantID:       c.GetString(tenantCtxKey),
 		Recipient:      body.Recipient,
 		Channel:        body.Channel,
+		Locale:         body.Locale,
 		IdempotencyKey: c.GetHeader("Idempotency-Key"),
 	})
 	if err != nil {

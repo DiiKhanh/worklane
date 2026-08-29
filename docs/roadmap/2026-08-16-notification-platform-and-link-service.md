@@ -1,7 +1,8 @@
 # Roadmap: Notification Platform + Link Service (future feature)
 
-**Status:** Future - not scheduled. Idea captured during brainstorming.
-**Hard gate:** Start only **after OTP email + SMS are live in production and stable.**
+**Status:** Active - gate cleared 2026-08-29; starting with sub-project **A (Template Studio)**.
+**Hard gate:** ~~Start only after OTP email + SMS are live in production and stable.~~
+**CLEARED 2026-08-29** - OTP email (Resend) and SMS (Twilio) both proven live in prod.
 **Noted:** 2026-08-16.
 **References the author wants to learn from:**
 - Notification System - system-design-notes 10
@@ -93,8 +94,10 @@ A new, self-contained bounded context `link-svc`.
 
 ## 6. Suggested order & gates
 
-0. **GATE:** OTP email + SMS in production, stable.
-1. **A - Template Studio** (small, high UI value; unblocks the rest).
+0. **GATE:** OTP email + SMS in production, stable. **CLEARED 2026-08-29.**
+1. **A - Template Studio** (small, high UI value; unblocks the rest). **SHIPPED 2026-08-29** -
+   design `docs/superpowers/specs/2026-08-29-template-studio-design.md`, plan
+   `docs/superpowers/plans/2026-08-29-template-studio.md`.
 2. **C - Link Service** (self-contained; the purest system-design learning; ships
    independently).
 3. **B - Notification Service** (largest; builds on A's templates and C's links).

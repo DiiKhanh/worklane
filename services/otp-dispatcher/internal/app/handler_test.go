@@ -10,16 +10,30 @@ import (
 )
 
 type fakeSender struct {
-	name string
-	id   string
-	err  error
-	sent int
+	name        string
+	id          string
+	err         error
+	sent        int
+	lastSubject string
+	lastBody    string
 }
 
 func (f *fakeSender) Name() string { return f.name }
-func (f *fakeSender) Send(context.Context, string, string) (string, error) {
+func (f *fakeSender) Send(_ context.Context, _, subject, body string) (string, error) {
 	f.sent++
+	f.lastSubject = subject
+	f.lastBody = body
 	return f.id, f.err
+}
+
+type fakeTemplateSource struct {
+	tpl   Template
+	found bool
+	err   error
+}
+
+func (f *fakeTemplateSource) Active(context.Context, string, string) (Template, bool, error) {
+	return f.tpl, f.found, f.err
 }
 
 type fakeRepo struct {
@@ -52,13 +66,24 @@ type fixedClock struct{ t time.Time }
 
 func (c fixedClock) Now() time.Time { return c.t }
 
-func newHandler(senders map[string]Sender) (*Handler, *fakeRepo, *fakePub) {
+func newHandlerWithTemplates(senders map[string]Sender, src TemplateSource, fallback map[string]Template, expiry string) (*Handler, *fakeRepo, *fakePub) {
 	repo := newFakeRepo()
 	pub := &fakePub{}
-	h := NewHandler(Deps{Senders: senders, Repo: repo, Pub: pub, Clock: fixedClock{t: time.Unix(0, 0)}}, Config{
+	h := NewHandler(Deps{Senders: senders, Templates: src, Repo: repo, Pub: pub, Clock: fixedClock{t: time.Unix(0, 0)}}, Config{
 		SentTopic: "otp.sent", FailedTopic: "otp.failed", DLQTopic: "otp.dlq",
+		ExpiryText: expiry, Fallback: fallback,
 	})
 	return h, repo, pub
+}
+
+// newHandler keeps the pre-Template-Studio test surface: no active DB template (source
+// returns found=false), so every existing test renders from the env fallback.
+func newHandler(senders map[string]Sender) (*Handler, *fakeRepo, *fakePub) {
+	return newHandlerWithTemplates(senders, &fakeTemplateSource{found: false},
+		map[string]Template{
+			"email": {Subject: "Your verification code", Body: "Your verification code is {{code}}."},
+			"sms":   {Body: "Your verification code is {{code}}."},
+		}, "5 minutes")
 }
 
 func evt() contracts.RequestedEvent {
@@ -67,6 +92,32 @@ func evt() contracts.RequestedEvent {
 
 func smsEvt() contracts.RequestedEvent {
 	return contracts.RequestedEvent{RequestID: "r2", TenantID: "t1", Recipient: "+84901234567", Channel: "sms", Code: "123456"}
+}
+
+func TestHandle_RendersFromTemplateSource(t *testing.T) {
+	email := &fakeSender{name: "resend", id: "e1"}
+	src := &fakeTemplateSource{tpl: Template{Subject: "Code {{code}}", Body: "It is {{code}}, expires {{expiry}}."}, found: true}
+	h, _, _ := newHandlerWithTemplates(map[string]Sender{"email": email}, src,
+		map[string]Template{"email": {Subject: "FB", Body: "fallback {{code}}"}}, "5 minutes")
+	if err := h.Handle(context.Background(), evt()); err != nil {
+		t.Fatal(err)
+	}
+	if email.lastSubject != "Code 123456" || email.lastBody != "It is 123456, expires 5 minutes." {
+		t.Fatalf("rendered from DB template expected, got %q / %q", email.lastSubject, email.lastBody)
+	}
+}
+
+func TestHandle_FallsBackWhenNoActiveTemplate(t *testing.T) {
+	email := &fakeSender{name: "resend", id: "e1"}
+	src := &fakeTemplateSource{found: false}
+	h, _, _ := newHandlerWithTemplates(map[string]Sender{"email": email}, src,
+		map[string]Template{"email": {Subject: "FB", Body: "fallback {{code}}"}}, "5 minutes")
+	if err := h.Handle(context.Background(), evt()); err != nil {
+		t.Fatal(err)
+	}
+	if email.lastBody != "fallback 123456" {
+		t.Fatalf("must fall back to env template, got %q", email.lastBody)
+	}
 }
 
 func TestHandle_Success(t *testing.T) {

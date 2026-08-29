@@ -19,11 +19,24 @@ type SMSProvider interface {
 	Send(ctx context.Context, to, body string) (providerMsgID string, err error)
 }
 
-// Sender renders and delivers one OTP over a specific channel. Name is recorded on the
-// delivery log as the provider label.
+// Sender delivers one already-rendered message over a specific channel. Name is recorded
+// on the delivery log as the provider label. Rendering (template resolution + variable
+// substitution) happens in the handler, so a Sender is pure delivery.
 type Sender interface {
 	Name() string
-	Send(ctx context.Context, to, code string) (msgID string, err error)
+	Send(ctx context.Context, to, subject, body string) (msgID string, err error)
+}
+
+// Template is a raw (unrendered) message template resolved for a (channel, locale).
+type Template struct {
+	Subject string
+	Body    string
+}
+
+// TemplateSource resolves the active template for a (channel, locale). found=false means
+// no active row exists, so the handler renders from its env fallback instead.
+type TemplateSource interface {
+	Active(ctx context.Context, channel, locale string) (tpl Template, found bool, err error)
 }
 
 // DeliveryLog is one provider attempt, written for the dashboard/audit.

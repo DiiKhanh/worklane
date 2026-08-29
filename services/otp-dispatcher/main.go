@@ -18,10 +18,12 @@ import (
 	"github.com/duykhanh/worklane/pkg/platform/config"
 	"github.com/duykhanh/worklane/pkg/platform/kafka"
 	"github.com/duykhanh/worklane/pkg/platform/mysql"
+	redisplatform "github.com/duykhanh/worklane/pkg/platform/redis"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/inbound/consumer"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/mysqlrepo"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/resendmail"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/smtpmail"
+	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/templatestore"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/twiliosms"
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/app"
 )
@@ -32,6 +34,7 @@ func (realClock) Now() time.Time { return time.Now() }
 
 func main() {
 	dsn := config.Env("MYSQL_DSN", "root:secret@tcp(localhost:3306)/otp?parseTime=true&multiStatements=true")
+	redisURL := config.Env("REDIS_URL", "redis://localhost:6379/0")
 	brokers := config.EnvList("KAFKA_BROKERS", []string{"localhost:9092"})
 	requestedTopic := config.Env("KAFKA_TOPIC_REQUESTED", "otp.requested")
 	group := config.Env("KAFKA_GROUP", "otp-dispatcher")
@@ -42,11 +45,14 @@ func main() {
 	twilioToken := config.Env("TWILIO_AUTH_TOKEN", "")
 	twilioFrom := config.Env("TWILIO_FROM", "")
 	twilioBase := config.Env("TWILIO_BASE_URL", "https://api.twilio.com")
-	smsBodyFmt := config.Env("OTP_SMS_BODY_FMT", "Your verification code is %s. It expires in 5 minutes.")
 
 	db, err := mysql.Open(dsn)
 	if err != nil {
 		log.Fatalf("otp-dispatcher: mysql: %v", err)
+	}
+	rc, err := redisplatform.Open(redisURL)
+	if err != nil {
+		log.Fatalf("otp-dispatcher: redis: %v", err)
 	}
 	prod, err := kafka.NewProducer(brokers)
 	if err != nil {
@@ -73,23 +79,35 @@ func main() {
 
 	sms := twiliosms.New(twilioSID, twilioToken, twilioFrom, twilioBase, &http.Client{Timeout: 10 * time.Second})
 
-	emailTpl := app.Template{
-		Subject: config.Env("OTP_EMAIL_SUBJECT", "Your verification code"),
-		BodyFmt: config.Env("OTP_EMAIL_BODY", "Your verification code is %s. It expires in 5 minutes."),
+	// Templates come from the DB (single source of truth) via Redis cache-aside; the env
+	// values below are the fallback used only when no active DB template exists. Bodies use
+	// {{code}}/{{expiry}} (rendered by pkg/templating), not printf %s.
+	templates := templatestore.New(db, rc, config.EnvDuration("TEMPLATE_CACHE_TTL", 10*time.Minute))
+	fallback := map[string]app.Template{
+		"email": {
+			Subject: config.Env("OTP_EMAIL_SUBJECT", "Your verification code"),
+			Body:    config.Env("OTP_EMAIL_BODY", "Your verification code is {{code}}. It expires in {{expiry}}."),
+		},
+		"sms": {
+			Body: config.Env("OTP_SMS_BODY", "Your verification code is {{code}}. It expires in {{expiry}}."),
+		},
 	}
 
 	handler := app.NewHandler(app.Deps{
 		Senders: map[string]app.Sender{
-			"email": app.NewEmailSender(mail, providerLabel, emailTpl),
-			"sms":   app.NewSMSSender(sms, "twilio", smsBodyFmt),
+			"email": app.NewEmailSender(mail, providerLabel),
+			"sms":   app.NewSMSSender(sms, "twilio"),
 		},
-		Repo:  repo,
-		Pub:   prod,
-		Clock: realClock{},
+		Templates: templates,
+		Repo:      repo,
+		Pub:       prod,
+		Clock:     realClock{},
 	}, app.Config{
 		SentTopic:   config.Env("KAFKA_TOPIC_SENT", "otp.sent"),
 		FailedTopic: config.Env("KAFKA_TOPIC_FAILED", "otp.failed"),
 		DLQTopic:    config.Env("KAFKA_TOPIC_DLQ", "otp.dlq"),
+		ExpiryText:  config.Env("OTP_EXPIRY_TEXT", "5 minutes"),
+		Fallback:    fallback,
 	})
 
 	cons, err := kafka.NewConsumer(brokers, group, requestedTopic, consumer.New(handler).Handle)

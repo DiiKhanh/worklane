@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { FileText } from "lucide-react";
-import type { Template } from "@/lib/roadmap/templates";
-import { TEMPLATES } from "@/lib/roadmap/templates";
+import type { Template, TemplateChannel } from "@/lib/api/types";
+import { useCreateTemplate } from "@/lib/queries/use-templates";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/common/simple-select";
 
+// A new template starts from a safe default body using only the wired variables.
+function defaultBody(): string {
+  return "Your verification code is {{code}}. It expires in {{expiry}}.";
+}
+
 export function NewTemplateDialog({
   open,
   onClose,
@@ -26,62 +31,35 @@ export function NewTemplateDialog({
   onClose: () => void;
   onCreate: (t: Template) => void;
 }) {
+  const create = useCreateTemplate();
   const [name, setName] = useState("");
-  const [channel, setChannel] = useState<"email" | "sms">("email");
+  const [channel, setChannel] = useState<TemplateChannel>("email");
   const [locale, setLocale] = useState("en");
-  const [from, setFrom] = useState("blank");
-
-  const starters = [{ value: "blank", label: "Blank" }].concat(
-    TEMPLATES.map((t) => ({
-      value: t.id,
-      label: `${t.name} · ${t.channel} · ${t.locale}`,
-    })),
-  );
+  const [error, setError] = useState<string | null>(null);
 
   function reset() {
     setName("");
     setChannel("email");
     setLocale("en");
-    setFrom("blank");
+    setError(null);
   }
 
-  function create() {
-    const base = TEMPLATES.find((t) => t.id === from);
-    const slug =
-      name
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_|_$/g, "") || "untitled";
-    onCreate({
-      id: `tpl_${slug}`,
-      name: name.trim() || "Untitled",
-      channel,
-      locale,
-      version: 1,
-      status: "expired",
-      updated: "just now",
-      subject: base
-        ? base.subject
-        : channel === "email"
-          ? "Your worklane code: {{code}}"
-          : "-",
-      body: base
-        ? base.body
-        : channel === "email"
-          ? "Your worklane verification code is {{code}}. It expires in 5 minutes."
-          : "worklane: {{code}} is your code. Expires in 5 min.",
-      versions: [
-        {
-          v: 1,
-          when: "just now",
-          by: "you",
-          note: base ? `Forked from ${base.id}` : "Draft created",
-        },
-      ],
-      sends: [],
-    });
-    reset();
+  async function submit() {
+    setError(null);
+    try {
+      const template = await create.mutateAsync({
+        name: name.trim() || "Untitled",
+        channel,
+        locale,
+        subject: channel === "email" ? "Your verification code" : "",
+        body: defaultBody(),
+        note: "Draft created",
+      });
+      reset();
+      onCreate(template);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create template");
+    }
   }
 
   return (
@@ -117,7 +95,7 @@ export function NewTemplateDialog({
               <SimpleSelect
                 id="tpl-channel"
                 value={channel}
-                onValueChange={(v) => setChannel(v as "email" | "sms")}
+                onValueChange={(v) => setChannel(v as TemplateChannel)}
                 options={[
                   { value: "email", label: "Email" },
                   { value: "sms", label: "SMS" },
@@ -137,18 +115,7 @@ export function NewTemplateDialog({
               />
             </div>
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="tpl-from">Start from</Label>
-            <SimpleSelect
-              id="tpl-from"
-              value={from}
-              onValueChange={setFrom}
-              options={starters}
-            />
-            <span className="text-xs text-muted-foreground">
-              Forking copies the body and subject; version history starts fresh.
-            </span>
-          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
           <Button
@@ -161,7 +128,7 @@ export function NewTemplateDialog({
           >
             Cancel
           </Button>
-          <Button size="sm" onClick={create} disabled={!name.trim()}>
+          <Button size="sm" onClick={submit} disabled={!name.trim() || create.isPending}>
             <FileText className="size-3.5" />
             Create draft
           </Button>

@@ -12,4 +12,8 @@ data:
   RESEND_BASE_URL: "https://api.resend.com"
   TWILIO_FROM: "+15005550006"
   TWILIO_BASE_URL: "https://api.twilio.com"
-  OTP_SMS_BODY_FMT: "Your verification code is %s. It expires in 5 minutes."
+  # Dispatcher template fallback (used only when no active DB template exists). Bodies use
+  # {{code}}/{{expiry}} rendered by pkg/templating - never printf %s.
+  OTP_EMAIL_BODY: "Your verification code is {{code}}. It expires in {{expiry}}."
+  OTP_SMS_BODY: "Your verification code is {{code}}. It expires in {{expiry}}."
+  OTP_EXPIRY_TEXT: "5 minutes"

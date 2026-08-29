@@ -76,6 +76,30 @@ func newSvc() (*Service, *fakeRepo, *fakePub) {
 	return svc, repo, pub
 }
 
+func TestSend_PublishesLocaleDefaultingToEn(t *testing.T) {
+	svc, _, pub := newSvc()
+	if _, err := svc.Send(context.Background(), SendInput{TenantID: "t1", Recipient: "a@b.co"}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	evt, ok := pub.last.(contracts.RequestedEvent)
+	if !ok {
+		t.Fatalf("expected RequestedEvent, got %T", pub.last)
+	}
+	if evt.Locale != "en" {
+		t.Fatalf("empty locale must default to en, got %q", evt.Locale)
+	}
+}
+
+func TestSend_PublishesGivenLocale(t *testing.T) {
+	svc, _, pub := newSvc()
+	if _, err := svc.Send(context.Background(), SendInput{TenantID: "t1", Recipient: "a@b.co", Locale: "vi"}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if evt := pub.last.(contracts.RequestedEvent); evt.Locale != "vi" {
+		t.Fatalf("locale should pass through, got %q", evt.Locale)
+	}
+}
+
 func TestSend_ThenVerify_Success(t *testing.T) {
 	svc, repo, pub := newSvc()
 	ctx := context.Background()

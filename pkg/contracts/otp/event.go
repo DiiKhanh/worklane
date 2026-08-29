@@ -11,7 +11,8 @@ type RequestedEvent struct {
 	TenantID  string `json:"tenant_id"`
 	Recipient string `json:"recipient"`
 	Channel   string `json:"channel"`
-	Code      string `json:"code"` // never logged
+	Locale    string `json:"locale"` // empty is treated as "en" by the dispatcher
+	Code      string `json:"code"`   // never logged
 }
 
 // PartitionKey makes all events for one request land on the same Kafka partition, so a

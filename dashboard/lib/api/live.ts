@@ -1,12 +1,67 @@
 import type { DataSource } from "./source";
 import type {
+  AddVersionInput,
   ApiKey,
+  CreateTemplateInput,
   DeliveryLog,
   Overview,
   OtpRequest,
+  PreviewInput,
+  PreviewResult,
   SendResult,
+  Template,
+  TemplateChannel,
+  TemplateDetail,
+  TemplateStatus,
+  TemplateVersion,
   VerifyResult,
 } from "./types";
+
+// Raw snake_case shapes returned by otp-api's template endpoints.
+type templateJSON = {
+  id: string;
+  name: string;
+  channel: string;
+  locale: string;
+  status: string;
+  active_version_id: string;
+  updated_at: string;
+};
+type versionJSON = {
+  id: string;
+  version_no: number;
+  subject: string;
+  body: string;
+  status: string;
+  note: string;
+  created_by: string;
+  created_at: string;
+};
+
+function toTemplate(t: templateJSON): Template {
+  return {
+    id: t.id,
+    name: t.name,
+    channel: (t.channel === "sms" ? "sms" : "email") as TemplateChannel,
+    locale: t.locale,
+    status: (t.status === "archived" ? "archived" : "active") as TemplateStatus,
+    activeVersionId: t.active_version_id ?? "",
+    updatedAt: t.updated_at ?? "",
+  };
+}
+
+function toVersion(v: versionJSON): TemplateVersion {
+  return {
+    id: v.id,
+    versionNo: v.version_no,
+    subject: v.subject,
+    body: v.body,
+    status: (v.status as TemplateVersion["status"]) ?? "draft",
+    note: v.note ?? "",
+    createdBy: v.created_by ?? "",
+    createdAt: v.created_at ?? "",
+  };
+}
 
 type Options = {
   baseUrl: string;
@@ -115,11 +170,11 @@ export class LiveDataSource implements DataSource {
     };
   }
 
-  async send(recipient: string, channel: string): Promise<SendResult> {
+  async send(recipient: string, channel: string, locale = "en"): Promise<SendResult> {
     const res = await fetch(this.baseUrl + "/v1/otp/send", {
       method: "POST",
       headers: this.authHeaders(),
-      body: JSON.stringify({ recipient, channel }),
+      body: JSON.stringify({ recipient, channel, locale }),
     });
     if (!res.ok) throw new Error(`send failed: ${res.status}`);
     const body = (await res.json()) as { request_id: string };
@@ -146,5 +201,61 @@ export class LiveDataSource implements DataSource {
       default:
         throw new Error(`verify failed: ${res.status}`);
     }
+  }
+
+  // --- Template Studio ---
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(this.baseUrl + path, {
+      method: "POST",
+      headers: this.authHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      let msg = `POST ${path} failed: ${res.status}`;
+      try {
+        const err = (await res.json()) as { error?: string };
+        if (err.error) msg = err.error;
+      } catch {
+        // keep the status-based message
+      }
+      throw new Error(msg);
+    }
+    return (await res.json()) as T;
+  }
+
+  async listTemplates(): Promise<Template[]> {
+    const rows = await this.get<templateJSON[]>("/v1/templates");
+    return rows.map(toTemplate);
+  }
+
+  async getTemplate(id: string): Promise<TemplateDetail> {
+    const body = await this.get<{ template: templateJSON; versions: versionJSON[] }>(
+      `/v1/templates/${encodeURIComponent(id)}`,
+    );
+    return { template: toTemplate(body.template), versions: (body.versions ?? []).map(toVersion) };
+  }
+
+  async createTemplate(input: CreateTemplateInput): Promise<Template> {
+    const t = await this.post<templateJSON>("/v1/templates", input);
+    return toTemplate(t);
+  }
+
+  async addVersion(id: string, input: AddVersionInput): Promise<TemplateVersion> {
+    const v = await this.post<versionJSON>(`/v1/templates/${encodeURIComponent(id)}/versions`, input);
+    return toVersion(v);
+  }
+
+  async publishVersion(id: string, versionId: string): Promise<void> {
+    const res = await fetch(
+      this.baseUrl +
+        `/v1/templates/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/publish`,
+      { method: "POST", headers: this.authHeaders() },
+    );
+    if (!res.ok) throw new Error(`publish failed: ${res.status}`);
+  }
+
+  async previewTemplate(input: PreviewInput): Promise<PreviewResult> {
+    return this.post<PreviewResult>("/v1/templates/preview", input);
   }
 }

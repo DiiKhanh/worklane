@@ -4,23 +4,26 @@ import (
 	"context"
 
 	contracts "github.com/duykhanh/worklane/pkg/contracts/otp"
+	"github.com/duykhanh/worklane/pkg/templating"
 )
 
-// Config holds the follow-up topics for the dispatch handler. Provider label and template
-// now live inside each Sender.
+// Config holds the follow-up topics plus template-rendering settings for the handler.
 type Config struct {
 	SentTopic   string
 	FailedTopic string
 	DLQTopic    string
+	ExpiryText  string              // value substituted for {{expiry}}, e.g. "5 minutes"
+	Fallback    map[string]Template // keyed by channel; used when no active DB template exists
 }
 
 // Deps bundles the ports the handler depends on. Senders is keyed by channel
-// (e.g. "email", "sms"); each Sender renders and delivers its own message.
+// (e.g. "email", "sms"); Templates resolves the active template for (channel, locale).
 type Deps struct {
-	Senders map[string]Sender
-	Repo    Repo
-	Pub     Publisher
-	Clock   Clock
+	Senders   map[string]Sender
+	Templates TemplateSource
+	Repo      Repo
+	Pub       Publisher
+	Clock     Clock
 }
 
 // Handler is the async delivery use case: render, send, record, publish.
@@ -42,8 +45,21 @@ func (h *Handler) Handle(ctx context.Context, evt contracts.RequestedEvent) erro
 		return h.recordFailure(ctx, evt, "unknown", 0, "unsupported channel: "+evt.Channel)
 	}
 
+	// Resolve the active template for (channel, locale). Any missing row / DB / cache
+	// problem falls back to the env template, so OTP delivery never breaks on templates.
+	locale := evt.Locale
+	if locale == "" {
+		locale = "en"
+	}
+	tpl, found, terr := h.d.Templates.Active(ctx, evt.Channel, locale)
+	if terr != nil || !found {
+		tpl = h.cfg.Fallback[evt.Channel]
+	}
+	subject, body := templating.Render(tpl.Subject, tpl.Body,
+		templating.Vars{Code: evt.Code, Expiry: h.cfg.ExpiryText})
+
 	start := h.d.Clock.Now()
-	msgID, sendErr := sender.Send(ctx, evt.Recipient, evt.Code)
+	msgID, sendErr := sender.Send(ctx, evt.Recipient, subject, body)
 	latency := h.d.Clock.Now().Sub(start).Milliseconds()
 
 	if sendErr != nil {

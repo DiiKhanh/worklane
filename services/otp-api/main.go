@@ -8,6 +8,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"log"
 	"net/http"
@@ -24,6 +26,7 @@ import (
 	otphttp "github.com/duykhanh/worklane/services/otp-api/internal/adapters/inbound/http"
 	"github.com/duykhanh/worklane/services/otp-api/internal/adapters/outbound/identity"
 	"github.com/duykhanh/worklane/services/otp-api/internal/adapters/outbound/mysqlrepo"
+	"github.com/duykhanh/worklane/services/otp-api/internal/adapters/outbound/mysqltemplates"
 	"github.com/duykhanh/worklane/services/otp-api/internal/adapters/outbound/redisstore"
 	"github.com/duykhanh/worklane/services/otp-api/internal/app"
 )
@@ -31,6 +34,15 @@ import (
 type realClock struct{}
 
 func (realClock) Now() time.Time { return time.Now() }
+
+// idGen implements app.IDGen with a random 128-bit hex id (fits templates.id CHAR(36)).
+type idGen struct{}
+
+func (idGen) New() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 func main() {
 	dsn := config.Env("MYSQL_DSN", "root:secret@tcp(localhost:3306)/otp?parseTime=true&multiStatements=true")
@@ -97,9 +109,13 @@ func main() {
 		},
 	})
 
+	// Template Studio: CRUD + preview over the versioned templates tables. Publish
+	// invalidates the dispatcher's Redis cache-aside key so a change goes live next send.
+	tsvc := app.NewTemplateService(mysqltemplates.New(db), redisstore.NewTemplateCache(rc), realClock{}, idGen{})
+
 	srv := &http.Server{
 		Addr:              httpAddr,
-		Handler:           otphttp.NewRouter(svc, repo, verifier, introspector),
+		Handler:           otphttp.NewRouter(svc, repo, tsvc, verifier, introspector),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
