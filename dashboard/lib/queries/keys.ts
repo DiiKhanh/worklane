@@ -4,4 +4,6 @@ export const qk = {
   requests: ["requests"] as const,
   logs: ["logs"] as const,
   overview: ["overview"] as const,
+  templates: ["templates"] as const,
+  template: (id: string) => ["templates", id] as const,
 };
