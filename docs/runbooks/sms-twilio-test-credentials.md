@@ -1,6 +1,9 @@
 # SMS smoke runbook - Twilio Test Credentials
 
-Status: **PENDING** until a production smoke creates a `provider=twilio,status=sent` delivery log.
+Status: **DONE** - a production smoke on 2026-08-29 created a `provider=twilio,status=sent` delivery
+log, proving the SMS path end-to-end in prod. OTP email + SMS are now both live and stable, which
+clears the hard gate on the [notification platform + link service roadmap](../roadmap/2026-08-16-notification-platform-and-link-service.md).
+Keep this runbook for re-running the smoke after credential or config changes.
 
 Use this when the goal is an internal production smoke test of the SMS path without sending a real
 SMS and without spending money. Twilio test credentials call the real Twilio API endpoint, validate
