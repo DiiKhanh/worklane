@@ -8,6 +8,7 @@ import "time"
 type sendRequest struct {
 	Recipient string `json:"recipient" binding:"required"`
 	Channel   string `json:"channel"`
+	Locale    string `json:"locale"`
 }
 
 type sendResponse struct {

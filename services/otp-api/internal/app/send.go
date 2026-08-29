@@ -16,6 +16,7 @@ type SendInput struct {
 	TenantID       string
 	Recipient      string
 	Channel        string // "email" | "sms"; empty defaults to email
+	Locale         string // "" defaults to "en"
 	IdempotencyKey string
 }
 
@@ -39,6 +40,11 @@ func (s *Service) Send(ctx context.Context, in SendInput) (SendResult, error) {
 	}
 	if err := domain.ValidateRecipient(channel, in.Recipient); err != nil {
 		return SendResult{}, err
+	}
+
+	locale := in.Locale
+	if locale == "" {
+		locale = "en"
 	}
 
 	// Idempotency: a repeated key returns the prior request without re-publishing, so a
@@ -87,7 +93,7 @@ func (s *Service) Send(ctx context.Context, in SendInput) (SendResult, error) {
 
 	evt := contracts.RequestedEvent{
 		RequestID: requestID, TenantID: in.TenantID, Recipient: in.Recipient,
-		Channel: string(channel), Code: code,
+		Channel: string(channel), Locale: locale, Code: code,
 	}
 	if err := s.d.Pub.Publish(ctx, s.cfg.RequestedTopic, evt); err != nil {
 		return SendResult{}, err
