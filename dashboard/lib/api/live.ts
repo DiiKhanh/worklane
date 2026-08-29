@@ -170,11 +170,11 @@ export class LiveDataSource implements DataSource {
     };
   }
 
-  async send(recipient: string, channel: string): Promise<SendResult> {
+  async send(recipient: string, channel: string, locale = "en"): Promise<SendResult> {
     const res = await fetch(this.baseUrl + "/v1/otp/send", {
       method: "POST",
       headers: this.authHeaders(),
-      body: JSON.stringify({ recipient, channel }),
+      body: JSON.stringify({ recipient, channel, locale }),
     });
     if (!res.ok) throw new Error(`send failed: ${res.status}`);
     const body = (await res.json()) as { request_id: string };

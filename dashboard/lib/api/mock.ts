@@ -236,6 +236,7 @@ export class MockDataSource implements DataSource {
   }
 
   async send(recipient: string, channel: string): Promise<SendResult> {
+    // locale is accepted on the interface; the mock's rendering does not vary by locale.
     await this.latency();
     const r = rng((Date.now() ^ recipient.length) >>> 0);
     const code = String(100000 + Math.floor(r() * 900000));

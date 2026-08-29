@@ -7,8 +7,8 @@ import { qk } from "./keys";
 export function useSend() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { recipient: string; channel: string }) =>
-      getDataSource().send(vars.recipient, vars.channel),
+    mutationFn: (vars: { recipient: string; channel: string; locale?: string }) =>
+      getDataSource().send(vars.recipient, vars.channel, vars.locale),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.requests });
       qc.invalidateQueries({ queryKey: qk.logs });

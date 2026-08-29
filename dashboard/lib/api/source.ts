@@ -23,7 +23,7 @@ export interface DataSource {
   listRequests(): Promise<OtpRequest[]>;
   listLogs(): Promise<DeliveryLog[]>;
   getOverview(): Promise<Overview>;
-  send(recipient: string, channel: string): Promise<SendResult>;
+  send(recipient: string, channel: string, locale?: string): Promise<SendResult>;
   verify(recipient: string, code: string, channel?: string): Promise<VerifyResult>;
 
   // Template Studio

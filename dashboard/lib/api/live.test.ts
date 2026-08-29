@@ -122,3 +122,15 @@ describe("LiveDataSource templates", () => {
     await expect(ds.previewTemplate({ channel: "email", subject: "s", body: "{{name}}" })).rejects.toThrow(/unknown variable/);
   });
 });
+
+describe("LiveDataSource.send locale", () => {
+  it("posts the chosen locale in the send body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ request_id: "r1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const ds = new LiveDataSource({ baseUrl: "http://x", getToken: () => "jwt" });
+    await ds.send("d@e.com", "email", "vi");
+    const bodySent = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(bodySent.locale).toBe("vi");
+    expect(bodySent.channel).toBe("email");
+  });
+});
