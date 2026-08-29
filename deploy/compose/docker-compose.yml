@@ -106,6 +106,7 @@ services:
     restart: on-failure # ride out the MySQL first-init restart window (like k8s self-heal)
     environment:
       MYSQL_DSN: "root:secret@tcp(mysql:3306)/otp?parseTime=true&multiStatements=true"
+      REDIS_URL: "redis://redis:6379/0"
       KAFKA_BROKERS: "redpanda:9092"
       EMAIL_PROVIDER: "${EMAIL_PROVIDER:-smtp}"
       SMTP_HOST: "mailhog"
@@ -118,9 +119,13 @@ services:
       TWILIO_AUTH_TOKEN: "${TWILIO_AUTH_TOKEN:-}"
       TWILIO_FROM: "${TWILIO_FROM:-}"
       TWILIO_BASE_URL: "${TWILIO_BASE_URL:-https://api.twilio.com}"
-      OTP_SMS_BODY_FMT: "Your verification code is %s. It expires in 5 minutes."
+      # Template fallback (used only when no active DB template exists); {{code}}/{{expiry}} rendered.
+      OTP_EMAIL_BODY: "Your verification code is {{code}}. It expires in {{expiry}}."
+      OTP_SMS_BODY: "Your verification code is {{code}}. It expires in {{expiry}}."
+      OTP_EXPIRY_TEXT: "5 minutes"
     depends_on:
       mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
       redpanda: { condition: service_healthy }
       otp-api: { condition: service_started } # otp-api owns migrations; wait for its schema
 
