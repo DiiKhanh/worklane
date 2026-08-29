@@ -1,7 +1,8 @@
 # Roadmap: Notification Platform + Link Service (future feature)
 
-**Status:** Future - not scheduled. Idea captured during brainstorming.
-**Hard gate:** Start only **after OTP email + SMS are live in production and stable.**
+**Status:** Active - gate cleared 2026-08-29; starting with sub-project **A (Template Studio)**.
+**Hard gate:** ~~Start only after OTP email + SMS are live in production and stable.~~
+**CLEARED 2026-08-29** - OTP email (Resend) and SMS (Twilio) both proven live in prod.
 **Noted:** 2026-08-16.
 **References the author wants to learn from:**
 - Notification System - system-design-notes 10
