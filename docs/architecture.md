@@ -185,6 +185,7 @@ erDiagram
     tenants ||--o{ api_keys : "has"
     tenants ||--o{ otp_requests : "owns"
     otp_requests ||--o{ delivery_logs : "produces"
+    templates ||--o{ template_versions : "has"
 
     tenants {
         char id PK
@@ -216,15 +217,34 @@ erDiagram
     }
     templates {
         char id PK
+        varchar name
         varchar channel
         varchar locale
+        varchar status
+        char active_version_id FK
+    }
+    template_versions {
+        char id PK
+        char template_id FK
+        int version_no
         varchar subject
         text body
+        varchar status
+        varchar created_by
     }
 ```
 
 > Note: the plaintext OTP code lives **only** in Redis (as a salted hash, TTL-bound) and is never in
 > MySQL. `otp_requests.recipient_masked` stores `d***@gmail.com`, not the real address.
+
+> **Template Studio (sub-project A):** `templates` is a logical entity (one per `channel` + `locale`),
+> and each edit appends an immutable `template_versions` row. Publishing repoints
+> `templates.active_version_id` (`draft → published → superseded`). The dispatcher resolves the
+> active template for `(channel, locale)` via **Redis cache-aside** (`tmpl:{channel}:{locale}`,
+> invalidated by otp-api on publish) and renders it through the shared `pkg/templating` engine -
+> the same code the dashboard preview calls, so a preview cannot diverge from what is delivered.
+> If no active row exists (or on any DB/cache error) the dispatcher **falls back to the env-config
+> template**, so OTP delivery never breaks. Variables are the allowlisted `{{code}}` and `{{expiry}}`.
 
 ---
 
