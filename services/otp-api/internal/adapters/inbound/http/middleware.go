@@ -14,6 +14,10 @@ import (
 // tenantCtxKey is where the resolved tenant id is stashed for handlers to read.
 const tenantCtxKey = "tenant_id"
 
+// authorCtxKey holds the authenticated user's email on the JWT path. It is empty for
+// API-key callers, which is how template management is restricted to human logins.
+const authorCtxKey = "actor_email"
+
 // authenticate resolves a Bearer token that is either a user JWT (dashboard) or a tenant
 // API key (machine). A JWT has three dot-separated parts and is verified locally with the
 // public key. Anything else is an opaque API key, resolved by asking the identity service
@@ -35,6 +39,7 @@ func authenticate(v *security.Verifier, intro app.Introspector) gin.HandlerFunc 
 				return
 			}
 			c.Set(tenantCtxKey, claims.TenantID)
+			c.Set(authorCtxKey, claims.Email)
 			c.Next()
 			return
 		}

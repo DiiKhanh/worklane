@@ -12,13 +12,14 @@ import (
 // middleware (user JWT or tenant API key via introspection), so every endpoint is
 // tenant-scoped. Returned as a *gin.Engine, which is an http.Handler - convenient for
 // httptest and for main.go.
-func NewRouter(svc OTPService, repo app.Repo, verifier *security.Verifier, intro app.Introspector) *gin.Engine {
+func NewRouter(svc OTPService, repo app.Repo, tsvc TemplateAPI, verifier *security.Verifier, intro app.Introspector) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(metrics.Middleware())
 
 	h := &Handlers{svc: svc, repo: repo}
+	th := &TemplateHandlers{svc: tsvc}
 
 	r.GET("/healthz", h.Health)
 	r.GET("/metrics", metrics.Handler())
@@ -31,6 +32,13 @@ func NewRouter(svc OTPService, repo app.Repo, verifier *security.Verifier, intro
 		v1.GET("/otp/requests", h.ListRequests)
 		v1.GET("/delivery-logs", h.ListDeliveryLogs)
 		v1.GET("/stats", h.Stats)
+
+		v1.GET("/templates", th.List)
+		v1.POST("/templates", th.Create)
+		v1.POST("/templates/preview", th.Preview)
+		v1.GET("/templates/:id", th.Get)
+		v1.POST("/templates/:id/versions", th.AddVersion)
+		v1.POST("/templates/:id/versions/:vid/publish", th.Publish)
 	}
 	return r
 }
