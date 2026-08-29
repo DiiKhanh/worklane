@@ -3,12 +3,11 @@
 import { useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
-import type { Template } from "@/lib/roadmap/templates";
-import { TEMPLATES } from "@/lib/roadmap/templates";
+import type { Template } from "@/lib/api/types";
+import { useTemplates } from "@/lib/queries/use-templates";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SectionHeading } from "@/components/common/section-heading";
-import { RoadmapNote } from "@/components/common/roadmap-note";
 import { StateBadge } from "@/components/common/state-badge";
 import { DataTable } from "@/components/common/data-table";
 import { TemplateDetail } from "./template-detail";
@@ -21,9 +20,7 @@ const columns: ColumnDef<Template>[] = [
     cell: ({ row }) => (
       <span className="grid">
         <span className="font-medium">{row.original.name}</span>
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {row.original.id}
-        </span>
+        <span className="font-mono text-[11px] text-muted-foreground">{row.original.id}</span>
       </span>
     ),
   },
@@ -36,45 +33,25 @@ const columns: ColumnDef<Template>[] = [
     accessorKey: "locale",
     header: "Locale",
     cell: ({ row }) => (
-      <span className="font-mono text-[13px] text-muted-foreground">
-        {row.original.locale}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "version",
-    header: "Version",
-    cell: ({ row }) => (
-      <span className="font-mono text-[13px] tabular-nums">
-        v{row.original.version}
-      </span>
+      <span className="font-mono text-[13px] text-muted-foreground">{row.original.locale}</span>
     ),
   },
   {
     accessorKey: "status",
     header: "Status",
     cell: ({ row }) => (
-      <StateBadge
-        state={row.original.status === "active" ? "active" : "expired"}
-      />
-    ),
-  },
-  {
-    accessorKey: "updated",
-    header: "Updated",
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">{row.original.updated}</span>
+      <StateBadge state={row.original.status === "active" ? "active" : "expired"} />
     ),
   },
 ];
 
 export function TemplatesView() {
-  const [rows, setRows] = useState<Template[]>(TEMPLATES);
+  const { data: rows = [], isLoading } = useTemplates();
   const [open, setOpen] = useState<Template | null>(null);
   const [creating, setCreating] = useState(false);
 
   if (open) {
-    return <TemplateDetail key={open.id} tpl={open} onBack={() => setOpen(null)} />;
+    return <TemplateDetail key={open.id} template={open} onBack={() => setOpen(null)} />;
   }
 
   return (
@@ -89,19 +66,21 @@ export function TemplatesView() {
           </Button>
         }
       />
-      <RoadmapNote />
-      <DataTable
-        columns={columns}
-        data={rows}
-        pageSize={10}
-        rowKey={(t) => t.id}
-        onRowClick={setOpen}
-      />
+      {isLoading ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">Loading templates…</div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={rows}
+          pageSize={10}
+          rowKey={(t) => t.id}
+          onRowClick={setOpen}
+        />
+      )}
       <NewTemplateDialog
         open={creating}
         onClose={() => setCreating(false)}
         onCreate={(t) => {
-          setRows((r) => [t, ...r]);
           setCreating(false);
           setOpen(t);
         }}
