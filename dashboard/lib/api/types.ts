@@ -59,3 +59,44 @@ export type VerifyResult = {
   ok: boolean;
   status: VerifyOutcome;
 };
+
+// --- Template Studio ---
+
+export type TemplateChannel = "email" | "sms";
+export type TemplateStatus = "active" | "archived";
+export type VersionStatus = "draft" | "published" | "superseded";
+
+export type Template = {
+  id: string;
+  name: string;
+  channel: TemplateChannel;
+  locale: string;
+  status: TemplateStatus;
+  activeVersionId: string;
+  updatedAt: string;
+};
+
+export type TemplateVersion = {
+  id: string;
+  versionNo: number;
+  subject: string;
+  body: string;
+  status: VersionStatus;
+  note: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type TemplateDetail = { template: Template; versions: TemplateVersion[] };
+
+export type PreviewInput = { channel: string; subject: string; body: string };
+export type PreviewResult = { subject: string; body: string };
+export type CreateTemplateInput = {
+  name: string;
+  channel: TemplateChannel;
+  locale: string;
+  subject: string;
+  body: string;
+  note?: string;
+};
+export type AddVersionInput = { subject: string; body: string; note?: string };

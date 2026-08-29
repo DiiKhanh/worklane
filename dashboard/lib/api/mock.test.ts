@@ -53,3 +53,34 @@ describe("MockDataSource", () => {
     expect(o.series.length).toBeGreaterThan(0);
   });
 });
+
+describe("MockDataSource templates", () => {
+  it("previews with sample values through the same var names", async () => {
+    const ds = new MockDataSource();
+    const out = await ds.previewTemplate({
+      channel: "email",
+      subject: "Code {{code}}",
+      body: "expires {{expiry}}",
+    });
+    expect(out.subject).toContain("123456");
+    expect(out.body).toContain("5 minutes");
+  });
+
+  it("lists seeded templates and returns their versions", async () => {
+    const ds = new MockDataSource();
+    const list = await ds.listTemplates();
+    expect(list.length).toBeGreaterThan(0);
+    const detail = await ds.getTemplate(list[0].id);
+    expect(detail.versions.length).toBeGreaterThan(0);
+  });
+
+  it("publishing a version updates the active version", async () => {
+    const ds = new MockDataSource();
+    const [t] = await ds.listTemplates();
+    const draft = await ds.addVersion(t.id, { subject: "Your verification code", body: "New {{code}}", note: "edit" });
+    await ds.publishVersion(t.id, draft.id);
+    const after = await ds.getTemplate(t.id);
+    expect(after.template.activeVersionId).toBe(draft.id);
+    expect(after.versions.find((v) => v.id === draft.id)?.status).toBe("published");
+  });
+});
