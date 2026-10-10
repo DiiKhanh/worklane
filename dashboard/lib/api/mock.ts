@@ -7,6 +7,9 @@ import type {
   LinkClick,
   LinkDetail,
   LinkSummary,
+  Notification,
+  NotificationDetail,
+  NotificationEvent,
   Overview,
   OtpRequest,
   OtpState,
@@ -260,6 +263,58 @@ function toSummary(l: LinkDetail): LinkSummary {
   };
 }
 
+function buildNotifications(now: number): {
+  notifications: Notification[];
+  events: Record<string, NotificationEvent[]>;
+} {
+  const events: Record<string, NotificationEvent[]> = {};
+  const row = (
+    id: string,
+    ageMs: number,
+    fields: Pick<Notification, "channel" | "recipient" | "templateId" | "kind" | "state"> &
+      Partial<Pick<Notification, "provider" | "providerMsgId" | "latencyMs" | "error">>,
+    engagement: [number, string, string][] = [],
+  ): Notification => {
+    events[id] = engagement.map(([age, type, meta]) => ({ type, ts: iso(now - age), meta }));
+    return {
+      provider: "",
+      providerMsgId: "",
+      latencyMs: 0,
+      ...fields,
+      id,
+      createdAt: iso(now - ageMs),
+      updatedAt: iso(now - ageMs + (fields.latencyMs ?? 0)),
+    };
+  };
+  const email = { channel: "email", templateId: "tpl_email_en" } as const;
+  const sms = { channel: "sms", templateId: "tpl_sms_en" } as const;
+  const notifications = [
+    row("ntf_5c1e7a90", 20_000, { ...email, recipient: "m***@gmail.com", kind: "transactional", state: "queued" }),
+    row(
+      "ntf_81b3f2d4",
+      4 * MINUTE,
+      { ...email, recipient: "d***@gmail.com", kind: "transactional", state: "sent", provider: "resend", providerMsgId: "re_8Zk2pQ41", latencyMs: 212 },
+      [
+        [3 * MINUTE, "delivered", ""],
+        [2 * MINUTE, "opened", ""],
+        [MINUTE, "clicked", "7Xq2Ab"],
+      ],
+    ),
+    row("ntf_2a9d06be", 11 * MINUTE, { ...sms, recipient: "+84*****4567", kind: "transactional", state: "sent", provider: "twilio", providerMsgId: "SM3f9a1c07", latencyMs: 488 }),
+    row("ntf_e07c4418", 26 * MINUTE, { ...email, recipient: "s***@outlook.com", kind: "marketing", state: "suppressed" }),
+    row("ntf_b64f19a3", 48 * MINUTE, { ...email, recipient: "w***@acme.co", kind: "transactional", state: "failed", provider: "smtp", error: "smtp: 550 mailbox unavailable" }),
+    row(
+      "ntf_97d2c5f1",
+      2 * HOUR,
+      { ...email, recipient: "a***@proton.me", kind: "marketing", state: "sent", provider: "resend", providerMsgId: "re_Lm03xT9v", latencyMs: 164 },
+      [[2 * HOUR - MINUTE, "delivered", ""]],
+    ),
+    row("ntf_0f8ab7c2", 5 * HOUR, { ...sms, recipient: "+65*****8821", kind: "marketing", state: "sent", provider: "twilio", providerMsgId: "SM71be02d9", latencyMs: 530 }),
+    row("ntf_c3e15d68", 9 * HOUR, { ...email, recipient: "k***@worklane.io", kind: "transactional", state: "failed", provider: "resend", error: "resend: rate limited (429)" }),
+  ];
+  return { notifications, events };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((res) => setTimeout(res, ms));
 }
@@ -279,6 +334,8 @@ export class MockDataSource implements DataSource {
   private readonly templates: Template[];
   private readonly versions: Record<string, TemplateVersion[]>;
   private links: LinkDetail[];
+  private readonly notifications: Notification[];
+  private readonly notificationEvents: Record<string, NotificationEvent[]>;
   private readonly linkRng = rng(0x51f15eed);
   private seq = 0;
 
@@ -291,6 +348,9 @@ export class MockDataSource implements DataSource {
     this.templates = tpl.templates;
     this.versions = tpl.versions;
     this.links = buildLinks(this.t0);
+    const ntf = buildNotifications(this.t0);
+    this.notifications = ntf.notifications;
+    this.notificationEvents = ntf.events;
     // Three deliveries that "land" a few seconds apart after construction.
     const r = rng(0x1234abcd);
     this.inflight = [4000, 9000, 16000].map((offset) => ({
@@ -485,6 +545,20 @@ export class MockDataSource implements DataSource {
     };
     this.links = [created, ...this.links];
     return { code, shortUrl: created.shortUrl };
+  }
+
+  // --- Notifications ---
+
+  async listNotifications(): Promise<Notification[]> {
+    await this.latency();
+    return this.notifications;
+  }
+
+  async getNotification(id: string): Promise<NotificationDetail> {
+    await this.latency();
+    const found = this.notifications.find((n) => n.id === id);
+    if (!found) throw new Error("not found");
+    return { ...found, events: this.notificationEvents[id] ?? [] };
   }
 }
 

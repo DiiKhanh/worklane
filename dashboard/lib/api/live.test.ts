@@ -216,3 +216,91 @@ describe("LiveDataSource links", () => {
     await expect(new LiveDataSource(opts).createLink("nope")).rejects.toThrow(/invalid url/);
   });
 });
+
+describe("LiveDataSource notifications", () => {
+  const opts = { baseUrl: "http://x", getToken: () => "jwt" };
+  const row = {
+    id: "n1",
+    channel: "email",
+    recipient: "d***@gmail.com",
+    template_id: "t1",
+    kind: "marketing",
+    state: "sent",
+    provider: "resend",
+    provider_msg_id: "re_1",
+    latency_ms: 212,
+    error: "",
+    created_at: "2026-10-10T08:00:00Z",
+    updated_at: "2026-10-10T08:00:01Z",
+  };
+  const mapped = {
+    id: "n1",
+    channel: "email",
+    recipient: "d***@gmail.com",
+    templateId: "t1",
+    kind: "marketing",
+    state: "sent",
+    provider: "resend",
+    providerMsgId: "re_1",
+    latencyMs: 212,
+    error: undefined,
+    createdAt: "2026-10-10T08:00:00Z",
+    updatedAt: "2026-10-10T08:00:01Z",
+  };
+
+  it("listNotifications calls /v1/notifications with the bearer token and maps snake_case fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [row] });
+    vi.stubGlobal("fetch", fetchMock);
+    const out = await new LiveDataSource(opts).listNotifications();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://x/v1/notifications",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer jwt" }),
+      }),
+    );
+    expect(out).toEqual([mapped]);
+  });
+
+  it("keeps the failure reason of a failed notification", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [{ ...row, state: "failed", error: "smtp: 550 mailbox unavailable" }],
+      }),
+    );
+    const [n] = await new LiveDataSource(opts).listNotifications();
+    expect(n.state).toBe("failed");
+    expect(n.error).toBe("smtp: 550 mailbox unavailable");
+  });
+
+  it("rejects a state it does not know instead of showing it as delivered", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => [{ ...row, state: "bounced" }] }),
+    );
+    await expect(new LiveDataSource(opts).listNotifications()).rejects.toThrow(/bounced/);
+  });
+
+  it("getNotification escapes the id and maps the engagement events", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...row,
+        events: [{ type: "clicked", ts: "2026-10-10T08:05:00Z", meta: "abc" }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const out = await new LiveDataSource(opts).getNotification("a/b");
+    expect(fetchMock.mock.calls[0][0]).toBe("http://x/v1/notifications/a%2Fb");
+    expect(out).toEqual({
+      ...mapped,
+      events: [{ type: "clicked", ts: "2026-10-10T08:05:00Z", meta: "abc" }],
+    });
+  });
+
+  it("getNotification rejects when the id is unknown to the tenant", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    await expect(new LiveDataSource(opts).getNotification("nope")).rejects.toThrow(/404/);
+  });
+});

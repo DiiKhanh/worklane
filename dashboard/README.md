@@ -31,7 +31,7 @@ NEXT_PUBLIC_LINK_BASE=http://link.localhost   # public short-link host (link-svc
 
 In `live` mode the dashboard calls the auth/otp REST endpoints
 (`/auth/login`, `/auth/me`, `/auth/api-keys`, `/v1/otp/requests`, `/v1/delivery-logs`,
-`/v1/stats`, `/v1/otp/send|verify`, `/v1/links`) with a Bearer token. The Overview screen reads tenant-scoped
+`/v1/stats`, `/v1/otp/send|verify`, `/v1/links`, `/v1/notifications`) with a Bearer token. The Overview screen reads tenant-scoped
 rolling 24h aggregates from `/v1/stats`.
 
 Architecture rule: server data lives only in the TanStack Query cache; Zustand

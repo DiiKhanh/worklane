@@ -21,6 +21,7 @@ const ROUTES = [
   { path: "/api-keys", name: "api-keys" },
   { path: "/requests", name: "requests" },
   { path: "/logs", name: "logs" },
+  { path: "/notifications", name: "notifications" },
   { path: "/playground", name: "playground" },
   { path: "/templates", name: "templates" },
   { path: "/campaigns", name: "campaigns" },

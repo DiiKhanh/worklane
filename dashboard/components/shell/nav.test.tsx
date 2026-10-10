@@ -13,4 +13,12 @@ describe("Nav", () => {
     expect(screen.getByText("Campaigns")).toBeInTheDocument();
     expect(screen.getByText("Links")).toBeInTheDocument();
   });
+
+  it("links to the notification log", () => {
+    render(<Nav />);
+    expect(screen.getByRole("link", { name: "Notifications" })).toHaveAttribute(
+      "href",
+      "/notifications",
+    );
+  });
 });

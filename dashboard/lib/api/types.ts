@@ -124,3 +124,33 @@ export type LinkDetail = LinkSummary & {
 };
 
 export type ShortenResult = { code: string; shortUrl: string };
+
+// --- Notifications (notification-api log) ---
+
+export type NotificationState = "queued" | "sent" | "failed" | "suppressed";
+export type NotificationKind = "transactional" | "marketing";
+
+export type Notification = {
+  id: string;
+  channel: string;
+  recipient: string; // already masked; the log never stores the raw address
+  templateId: string;
+  kind: NotificationKind;
+  state: NotificationState;
+  provider: string; // "" until the dispatcher delivered it
+  providerMsgId: string;
+  latencyMs: number;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NotificationEvent = {
+  type: string; // delivered | opened | clicked
+  ts: string;
+  meta: string;
+};
+
+export type NotificationDetail = Notification & {
+  events: NotificationEvent[]; // engagement, oldest first
+};

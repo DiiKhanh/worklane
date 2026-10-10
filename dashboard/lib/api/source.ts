@@ -5,6 +5,8 @@ import type {
   DeliveryLog,
   LinkDetail,
   LinkSummary,
+  Notification,
+  NotificationDetail,
   Overview,
   OtpRequest,
   PreviewInput,
@@ -41,4 +43,8 @@ export interface DataSource {
   listLinks(): Promise<LinkSummary[]>;
   getLink(code: string): Promise<LinkDetail>;
   createLink(longUrl: string): Promise<ShortenResult>;
+
+  // Notifications
+  listNotifications(): Promise<Notification[]>;
+  getNotification(id: string): Promise<NotificationDetail>;
 }

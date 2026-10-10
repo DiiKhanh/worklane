@@ -7,7 +7,9 @@ type BadgeState =
   | "failed"
   | "expired"
   | "active"
-  | "revoked";
+  | "revoked"
+  | "queued"
+  | "suppressed";
 
 const STATE_COLOR: Record<BadgeState, string> = {
   requested: "var(--state-requested)",
@@ -17,6 +19,8 @@ const STATE_COLOR: Record<BadgeState, string> = {
   expired: "var(--state-expired)",
   active: "var(--state-verified)",
   revoked: "var(--state-expired)",
+  queued: "var(--state-requested)",
+  suppressed: "var(--state-expired)",
 };
 
 export function StateBadge({

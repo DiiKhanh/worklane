@@ -8,4 +8,6 @@ export const qk = {
   template: (id: string) => ["templates", id] as const,
   links: ["links"] as const,
   link: (code: string) => ["links", code] as const,
+  notifications: ["notifications"] as const,
+  notification: (id: string) => ["notifications", id] as const,
 };

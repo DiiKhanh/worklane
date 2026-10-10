@@ -6,6 +6,8 @@ import type {
   DeliveryLog,
   LinkDetail,
   LinkSummary,
+  Notification,
+  NotificationDetail,
   Overview,
   OtpRequest,
   PreviewInput,
@@ -72,6 +74,49 @@ type linkDetailJSON = linkJSON & {
   series: number[];
   recent: { ts: string; ref: string; geo: string; device: string }[];
 };
+
+// Raw shapes returned by notification-api; timestamps are RFC 3339 UTC.
+type notificationJSON = {
+  id: string;
+  channel: string;
+  recipient: string;
+  template_id: string;
+  kind: string;
+  state: string;
+  provider: string;
+  provider_msg_id: string;
+  latency_ms: number;
+  error: string;
+  created_at: string;
+  updated_at: string;
+};
+type notificationDetailJSON = notificationJSON & {
+  events: { type: string; ts: string; meta: string }[];
+};
+
+const NOTIFICATION_STATES: readonly string[] = ["queued", "sent", "failed", "suppressed"];
+
+function toNotification(n: notificationJSON): Notification {
+  // An unrecognised state must not pass for a delivered one, so it is rejected rather
+  // than defaulted.
+  if (!NOTIFICATION_STATES.includes(n.state)) {
+    throw new Error(`unknown notification state: ${n.state}`);
+  }
+  return {
+    id: n.id,
+    channel: n.channel,
+    recipient: n.recipient,
+    templateId: n.template_id ?? "",
+    kind: n.kind === "marketing" ? "marketing" : "transactional",
+    state: n.state as Notification["state"],
+    provider: n.provider ?? "",
+    providerMsgId: n.provider_msg_id ?? "",
+    latencyMs: n.latency_ms ?? 0,
+    error: n.error || undefined,
+    createdAt: n.created_at ?? "",
+    updatedAt: n.updated_at ?? "",
+  };
+}
 
 type Options = {
   baseUrl: string;
@@ -311,5 +356,26 @@ export class LiveDataSource implements DataSource {
       long_url: longUrl,
     });
     return { code: body.code, shortUrl: body.short_url };
+  }
+
+  // --- Notifications ---
+
+  async listNotifications(): Promise<Notification[]> {
+    const rows = await this.get<notificationJSON[]>("/v1/notifications");
+    return rows.map(toNotification);
+  }
+
+  async getNotification(id: string): Promise<NotificationDetail> {
+    const body = await this.get<notificationDetailJSON>(
+      `/v1/notifications/${encodeURIComponent(id)}`,
+    );
+    return {
+      ...toNotification(body),
+      events: (body.events ?? []).map((e) => ({
+        type: e.type ?? "",
+        ts: e.ts ?? "",
+        meta: e.meta ?? "",
+      })),
+    };
   }
 }

@@ -120,3 +120,30 @@ describe("MockDataSource links", () => {
     await expect(ds.getLink("nope")).rejects.toThrow(/not found/);
   });
 });
+
+describe("MockDataSource notifications", () => {
+  it("lists masked notifications newest first, covering every state", async () => {
+    const ds = new MockDataSource({ now: () => 1_800_000_000_000 });
+    const rows = await ds.listNotifications();
+    expect(new Set(rows.map((n) => n.state))).toEqual(
+      new Set(["queued", "sent", "failed", "suppressed"]),
+    );
+    expect(rows.every((n) => n.recipient.includes("*"))).toBe(true);
+    const created = rows.map((n) => n.createdAt);
+    expect(created).toEqual([...created].sort().reverse());
+    expect(rows.filter((n) => n.state === "failed").every((n) => !!n.error)).toBe(true);
+  });
+
+  it("returns a notification with its engagement events, oldest first", async () => {
+    const ds = new MockDataSource({ now: () => 1_800_000_000_000 });
+    const detail = await ds.getNotification("ntf_81b3f2d4");
+    expect(detail.state).toBe("sent");
+    expect(detail.events.map((e) => e.type)).toEqual(["delivered", "opened", "clicked"]);
+    const ts = detail.events.map((e) => e.ts);
+    expect(ts).toEqual([...ts].sort());
+  });
+
+  it("reports an unknown notification as not found", async () => {
+    await expect(new MockDataSource().getNotification("nope")).rejects.toThrow(/not found/);
+  });
+});
