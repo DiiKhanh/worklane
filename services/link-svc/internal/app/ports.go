@@ -5,10 +5,20 @@ package app
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/duykhanh/worklane/services/link-svc/internal/domain"
 )
+
+// ErrInvalidAPIKey is returned by an Introspector for an unknown or revoked API key, as
+// opposed to the identity service being unreachable.
+var ErrInvalidAPIKey = errors.New("invalid api key")
+
+// Introspector resolves an opaque API key to a tenant via auth-svc.
+type Introspector interface {
+	Introspect(ctx context.Context, apiKey string) (tenantID string, err error)
+}
 
 // Target is what the redirect hot path needs for one code: where to send the visitor
 // and which tenant the click belongs to. It is the value kept in the cache, so a cache
