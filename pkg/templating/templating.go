@@ -4,6 +4,9 @@
 // a preview therefore cannot diverge from what is sent. Substitution is a literal
 // allowlist replace, never a template interpreter: there is no field walking and no
 // code-execution surface.
+//
+// message.go holds the notification-platform variant (RenderMessage / ValidateMessage):
+// free-form {{var}} names supplied by the sender plus the {{link "url"}} directive.
 package templating
 
 import (
