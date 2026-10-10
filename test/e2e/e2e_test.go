@@ -33,6 +33,9 @@ var (
 	apiBase = env("E2E_API_BASE", "http://localhost")
 	mailhog = env("E2E_MAILHOG", "http://localhost:8025")
 	dsn     = env("MYSQL_DSN", "root:secret@tcp(localhost:3306)/otp?parseTime=true&multiStatements=true")
+	// linkHost is the public short-link host Traefik routes to link-svc. It is sent as the
+	// Host header against apiBase, so the test needs no DNS entry for it.
+	linkHost = env("E2E_LINK_HOST", "link.localhost")
 )
 
 func newID() string {

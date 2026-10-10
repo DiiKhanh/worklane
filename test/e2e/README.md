@@ -22,6 +22,10 @@ What it asserts:
 - `POST /v1/otp/send` with a seeded key → `202`, and an email is delivered (captured by MailHog).
 - `POST /v1/otp/verify` with the wrong code → `401`, with the correct code → `200`.
 - `POST /v1/otp/send` without a key → `401`.
+- `POST /v1/links` → `201` with a code, and `200` with the same code when re-posted (dedup).
+- `GET /<code>` on the link host → `302` to the original URL; an unknown code → `404`.
+- Clicks flow through Kafka and link-dispatcher into `GET /v1/links/:code` (`clicks`, `series`, `recent`).
+- `POST /v1/links` without a key → `401`; another tenant's code → `404`.
 
 ## Overrides (env)
 
@@ -30,6 +34,7 @@ What it asserts:
 | `E2E_API_BASE` | `http://localhost` | API base (Traefik) |
 | `E2E_MAILHOG` | `http://localhost:8025` | MailHog HTTP API |
 | `MYSQL_DSN` | `root:secret@tcp(localhost:3306)/otp?...` | MySQL for seeding |
+| `E2E_LINK_HOST` | `link.localhost` | Short-link host, sent as the `Host` header to the API base |
 
 ## Web UIs while the stack is up
 

@@ -129,6 +129,46 @@ services:
       redpanda: { condition: service_healthy }
       otp-api: { condition: service_started } # otp-api owns migrations; wait for its schema
 
+  link-svc:
+    build:
+      context: ../..
+      dockerfile: services/link-svc/Dockerfile
+    restart: on-failure # ride out the MySQL first-init restart window (like k8s self-heal)
+    environment:
+      # Keep the driver default loc=UTC: clicks are bucketed by UTC day.
+      MYSQL_DSN: "root:secret@tcp(mysql:3306)/link?parseTime=true&multiStatements=true"
+      AUTH_SVC_URL: "http://auth-svc:8889"
+      INTERNAL_API_TOKEN: "${INTERNAL_API_TOKEN:-dev-internal-token}"
+      REDIS_URL: "redis://redis:6379/0"
+      KAFKA_BROKERS: "redpanda:9092"
+      HTTP_ADDR: ":8890"
+      # link-svc only verifies JWTs, so it gets the public key (mounted, not committed).
+      AUTH_JWT_PUBLIC_KEY_FILE: "/secrets/auth_pub.pem"
+      # Single replica locally; every extra replica needs its own node id (0..1023).
+      LINK_NODE_ID: "0"
+      # Short links are served on the dedicated host routed in ../traefik/dynamic.yml.
+      LINK_PUBLIC_BASE: "${LINK_PUBLIC_BASE:-http://link.localhost}"
+    volumes:
+      - "./secrets:/secrets:ro"
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      auth-svc: { condition: service_started }
+
+  link-dispatcher:
+    build:
+      context: ../..
+      dockerfile: services/link-dispatcher/Dockerfile
+    restart: on-failure # ride out the MySQL first-init restart window (like k8s self-heal)
+    environment:
+      MYSQL_DSN: "root:secret@tcp(mysql:3306)/link?parseTime=true&multiStatements=true"
+      KAFKA_BROKERS: "redpanda:9092"
+    depends_on:
+      mysql: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      link-svc: { condition: service_started } # link-svc owns migrations; wait for its schema
+
   # ---- gateway ----
   traefik:
     image: traefik:v3.1

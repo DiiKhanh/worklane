@@ -1,5 +1,7 @@
-# Traefik dynamic config: route /v1/* to otp-api, with an edge rate-limit and CORS
-# middleware. API-key auth is enforced inside otp-api, not here.
+# Traefik dynamic config: route /v1/* to otp-api and /v1/links to link-svc, with an edge
+# rate-limit and CORS middleware. API-key auth is enforced inside the services, not here.
+# Traefik ranks routers by rule length, so the longer PathPrefix(`/v1/links`) wins over
+# PathPrefix(`/v1`); the priorities below make that explicit instead of implicit.
 http:
   routers:
     otpapi:
@@ -10,6 +12,26 @@ http:
       middlewares:
         - otp-ratelimit
         - otp-cors
+    linksvc:
+      rule: "PathPrefix(`/v1/links`)"
+      priority: 100
+      entryPoints:
+        - web
+      service: linksvc
+      middlewares:
+        - otp-ratelimit
+        - otp-cors
+    # Public short-link host: GET /:code redirects (302) without auth. *.localhost resolves
+    # to loopback, so http://link.localhost/<code> works with no /etc/hosts entry.
+    # /metrics is for in-cluster scraping only and is never exposed through the gateway.
+    linkredirect:
+      rule: "Host(`link.localhost`) && !Path(`/metrics`)"
+      priority: 50
+      entryPoints:
+        - web
+      service: linksvc
+      middlewares:
+        - link-redirect-ratelimit
     authsvc:
       rule: "PathPrefix(`/auth`)"
       entryPoints:
@@ -23,6 +45,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://otp-api:8888"
+    linksvc:
+      loadBalancer:
+        servers:
+          - url: "http://link-svc:8890"
     authsvc:
       loadBalancer:
         servers:
@@ -33,6 +59,12 @@ http:
       rateLimit:
         average: 100
         burst: 50
+    # Redirects are public, so they are limited per client IP at the edge (rateLimit
+    # groups by the request's remote address by default).
+    link-redirect-ratelimit:
+      rateLimit:
+        average: 50
+        burst: 100
     otp-cors:
       headers:
         accessControlAllowMethods:

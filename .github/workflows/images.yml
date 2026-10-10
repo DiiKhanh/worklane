@@ -45,8 +45,9 @@ jobs:
             # an empty body would short-circuit at validation (400) before proving the DB.
             login=$(hit -X POST http://localhost/auth/login -H 'Content-Type: application/json' -d '{"email":"x@y.co","password":"z"}')
             send=$(hit -X POST http://localhost/v1/otp/send -d '{}')
-            echo "attempt $i: auth-login=$login otp-send=$send"
-            [ "$login" = "401" ] && [ "$send" = "401" ] && exit 0
+            link=$(hit -X POST http://localhost/v1/links -d '{}')
+            echo "attempt $i: auth-login=$login otp-send=$send link-create=$link"
+            [ "$login" = "401" ] && [ "$send" = "401" ] && [ "$link" = "401" ] && exit 0
             sleep 2
           done
           echo "services not ready after ~2m"; exit 1
@@ -70,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        svc: [otp-api, auth-svc, otp-dispatcher, seed]
+        svc: [otp-api, auth-svc, otp-dispatcher, link-svc, link-dispatcher, seed]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
