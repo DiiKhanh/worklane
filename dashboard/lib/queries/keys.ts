@@ -6,4 +6,6 @@ export const qk = {
   overview: ["overview"] as const,
   templates: ["templates"] as const,
   template: (id: string) => ["templates", id] as const,
+  links: ["links"] as const,
+  link: (code: string) => ["links", code] as const,
 };

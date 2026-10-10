@@ -26,11 +26,12 @@ NEXT_PUBLIC_DATA_SOURCE=mock          # in-memory fixtures (default)
 # or
 NEXT_PUBLIC_DATA_SOURCE=live          # real otp-api
 NEXT_PUBLIC_API_BASE=http://localhost:8888
+NEXT_PUBLIC_LINK_BASE=http://link.localhost   # public short-link host (link-svc LINK_PUBLIC_BASE)
 ```
 
 In `live` mode the dashboard calls the auth/otp REST endpoints
 (`/auth/login`, `/auth/me`, `/auth/api-keys`, `/v1/otp/requests`, `/v1/delivery-logs`,
-`/v1/stats`, `/v1/otp/send|verify`) with a Bearer token. The Overview screen reads tenant-scoped
+`/v1/stats`, `/v1/otp/send|verify`, `/v1/links`) with a Bearer token. The Overview screen reads tenant-scoped
 rolling 24h aggregates from `/v1/stats`.
 
 Architecture rule: server data lives only in the TanStack Query cache; Zustand

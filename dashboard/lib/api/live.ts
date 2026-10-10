@@ -4,11 +4,14 @@ import type {
   ApiKey,
   CreateTemplateInput,
   DeliveryLog,
+  LinkDetail,
+  LinkSummary,
   Overview,
   OtpRequest,
   PreviewInput,
   PreviewResult,
   SendResult,
+  ShortenResult,
   Template,
   TemplateChannel,
   TemplateDetail,
@@ -63,8 +66,17 @@ function toVersion(v: versionJSON): TemplateVersion {
   };
 }
 
+// Raw shapes returned by link-svc; `created` and `ts` are RFC 3339 UTC.
+type linkJSON = { code: string; target: string; clicks: number; created: string };
+type linkDetailJSON = linkJSON & {
+  series: number[];
+  recent: { ts: string; ref: string; geo: string; device: string }[];
+};
+
 type Options = {
   baseUrl: string;
+  /** Public short-link host that serves GET /:code, e.g. https://link.example.com. */
+  linkBaseUrl?: string;
   getToken?: () => string;
 };
 
@@ -75,10 +87,12 @@ type Options = {
  */
 export class LiveDataSource implements DataSource {
   private readonly baseUrl: string;
+  private readonly linkBaseUrl: string;
   private readonly getToken: () => string;
 
   constructor(opts: Options) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, "");
+    this.linkBaseUrl = (opts.linkBaseUrl ?? this.baseUrl).replace(/\/$/, "");
     this.getToken = opts.getToken ?? (() => "");
   }
 
@@ -257,5 +271,45 @@ export class LiveDataSource implements DataSource {
 
   async previewTemplate(input: PreviewInput): Promise<PreviewResult> {
     return this.post<PreviewResult>("/v1/templates/preview", input);
+  }
+
+  // --- Links ---
+
+  private toLink(l: linkJSON): LinkSummary {
+    // The list and detail endpoints return no short_url, so it is rebuilt from the
+    // configured public host - the same LINK_PUBLIC_BASE link-svc uses on create.
+    return {
+      code: l.code,
+      shortUrl: `${this.linkBaseUrl}/${l.code}`,
+      target: l.target,
+      clicks: l.clicks ?? 0,
+      createdAt: l.created ?? "",
+    };
+  }
+
+  async listLinks(): Promise<LinkSummary[]> {
+    const rows = await this.get<linkJSON[]>("/v1/links");
+    return rows.map((l) => this.toLink(l));
+  }
+
+  async getLink(code: string): Promise<LinkDetail> {
+    const body = await this.get<linkDetailJSON>(`/v1/links/${encodeURIComponent(code)}`);
+    return {
+      ...this.toLink(body),
+      series: body.series ?? [],
+      recent: (body.recent ?? []).map((c) => ({
+        ts: c.ts ?? "",
+        ref: c.ref ?? "",
+        geo: c.geo ?? "",
+        device: c.device ?? "",
+      })),
+    };
+  }
+
+  async createLink(longUrl: string): Promise<ShortenResult> {
+    const body = await this.post<{ code: string; short_url: string }>("/v1/links", {
+      long_url: longUrl,
+    });
+    return { code: body.code, shortUrl: body.short_url };
   }
 }

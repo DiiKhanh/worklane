@@ -11,3 +11,8 @@ export function timeAgo(iso: string, now: number = Date.now()): string {
   const day = Math.round(hr / 24);
   return `${day}d ago`;
 }
+
+/** Drops the scheme for display, e.g. "https://wl.link/abc" -> "wl.link/abc". */
+export function stripScheme(url: string): string {
+  return url.replace(/^https?:\/\//, "");
+}

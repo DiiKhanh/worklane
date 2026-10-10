@@ -134,3 +134,85 @@ describe("LiveDataSource.send locale", () => {
     expect(bodySent.channel).toBe("email");
   });
 });
+
+describe("LiveDataSource links", () => {
+  const opts = { baseUrl: "http://x", linkBaseUrl: "http://link.x/", getToken: () => "jwt" };
+
+  it("listLinks calls /v1/links with the bearer token and builds short URLs from the link host", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { code: "abc123XYZ0", target: "https://example.com/a", clicks: 3, created: "2026-10-01T00:00:00Z" },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const links = await new LiveDataSource(opts).listLinks();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://x/v1/links",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer jwt" }),
+      }),
+    );
+    expect(links).toEqual([
+      {
+        code: "abc123XYZ0",
+        shortUrl: "http://link.x/abc123XYZ0",
+        target: "https://example.com/a",
+        clicks: 3,
+        createdAt: "2026-10-01T00:00:00Z",
+      },
+    ]);
+  });
+
+  it("getLink maps the detail shape, including series and recent clicks", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: "abc",
+        target: "https://example.com/a",
+        clicks: 2,
+        created: "2026-10-01T00:00:00Z",
+        series: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        recent: [{ ts: "2026-10-10T08:00:00Z", ref: "https://mail.example/", geo: "", device: "iOS" }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const detail = await new LiveDataSource(opts).getLink("abc");
+    expect(fetchMock.mock.calls[0][0]).toBe("http://x/v1/links/abc");
+    expect(detail).toEqual({
+      code: "abc",
+      shortUrl: "http://link.x/abc",
+      target: "https://example.com/a",
+      clicks: 2,
+      createdAt: "2026-10-01T00:00:00Z",
+      series: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+      recent: [{ ts: "2026-10-10T08:00:00Z", ref: "https://mail.example/", geo: "", device: "iOS" }],
+    });
+  });
+
+  it("getLink rejects when the code is unknown to the tenant", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    await expect(new LiveDataSource(opts).getLink("nope")).rejects.toThrow(/404/);
+  });
+
+  it("createLink POSTs long_url and returns the backend's short_url", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: "abc", short_url: "https://link.example.com/abc" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const out = await new LiveDataSource(opts).createLink("https://example.com/a");
+    expect(fetchMock.mock.calls[0][0]).toBe("http://x/v1/links");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ long_url: "https://example.com/a" });
+    expect(out).toEqual({ code: "abc", shortUrl: "https://link.example.com/abc" });
+  });
+
+  it("createLink surfaces the backend error message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: "invalid url" }) }),
+    );
+    await expect(new LiveDataSource(opts).createLink("nope")).rejects.toThrow(/invalid url/);
+  });
+});

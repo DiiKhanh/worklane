@@ -4,6 +4,9 @@ import type {
   ApiKey,
   CreateTemplateInput,
   DeliveryLog,
+  LinkClick,
+  LinkDetail,
+  LinkSummary,
   Overview,
   OtpRequest,
   OtpState,
@@ -11,6 +14,7 @@ import type {
   PreviewInput,
   PreviewResult,
   SendResult,
+  ShortenResult,
   Template,
   TemplateDetail,
   TemplateVersion,
@@ -164,6 +168,98 @@ function buildTemplates(now: number): { templates: Template[]; versions: Record<
   return { templates, versions };
 }
 
+const MINUTE = 60_000;
+const MOCK_LINK_BASE = "https://wl.link";
+const BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function buildLinks(now: number): LinkDetail[] {
+  const link = (
+    code: string,
+    target: string,
+    clicks: number,
+    ageMs: number,
+    series: number[],
+    recent: [number, string, string, string][],
+  ): LinkDetail => ({
+    code,
+    shortUrl: `${MOCK_LINK_BASE}/${code}`,
+    target,
+    clicks,
+    createdAt: iso(now - ageMs),
+    series,
+    recent: recent.map(
+      ([age, ref, geo, device]): LinkClick => ({ ts: iso(now - age), ref, geo, device }),
+    ),
+  });
+  return [
+    link(
+      "7Xq2Ab",
+      "https://worklane.io/settings/notifications",
+      1842,
+      2 * HOUR,
+      [42, 61, 55, 78, 96, 120, 143, 132, 168, 190, 176, 205, 231, 254],
+      [
+        [10_000, "https://mail.google.com/", "Ho Chi Minh City, VN", "iOS"],
+        [MINUTE, "https://mail.google.com/", "Ha Noi, VN", "Android"],
+        [3 * MINUTE, "", "Singapore, SG", "Android"],
+        [6 * MINUTE, "https://outlook.live.com/", "Tokyo, JP", "macOS"],
+      ],
+    ),
+    link(
+      "k91Rme",
+      "https://worklane.io/verify/help",
+      634,
+      9 * HOUR,
+      [8, 12, 19, 22, 31, 40, 38, 46, 51, 58, 62, 71, 66, 60],
+      [
+        [12 * MINUTE, "https://mail.google.com/", "Da Nang, VN", "iOS"],
+        [40 * MINUTE, "https://outlook.live.com/", "Osaka, JP", "Windows"],
+      ],
+    ),
+    link(
+      "Zt4bQ0",
+      "https://acme.co/welcome",
+      297,
+      24 * HOUR,
+      [2, 5, 9, 14, 18, 24, 29, 33, 30, 27, 22, 19, 15, 12],
+      [[2 * HOUR, "https://mail.google.com/", "Bangkok, TH", "Android"]],
+    ),
+    link(
+      "pL8vNc",
+      "https://worklane.io/status",
+      88,
+      3 * 24 * HOUR,
+      [1, 2, 4, 6, 8, 11, 9, 7, 6, 8, 10, 5, 3, 2],
+      [[5 * HOUR, "", "Kuala Lumpur, MY", "iOS"]],
+    ),
+  ];
+}
+
+/** Mirrors link-svc's rule: an absolute http(s) URL with a host. */
+function normalizeLongUrl(raw: string): string {
+  const trimmed = raw.trim();
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error("invalid url");
+  }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname) {
+    throw new Error("invalid url");
+  }
+  return trimmed;
+}
+
+function toSummary(l: LinkDetail): LinkSummary {
+  return {
+    code: l.code,
+    shortUrl: l.shortUrl,
+    target: l.target,
+    clicks: l.clicks,
+    createdAt: l.createdAt,
+  };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((res) => setTimeout(res, ms));
 }
@@ -182,6 +278,8 @@ export class MockDataSource implements DataSource {
   private readonly codes = new Map<string, string>();
   private readonly templates: Template[];
   private readonly versions: Record<string, TemplateVersion[]>;
+  private links: LinkDetail[];
+  private readonly linkRng = rng(0x51f15eed);
   private seq = 0;
 
   constructor(opts: Options = {}) {
@@ -192,6 +290,7 @@ export class MockDataSource implements DataSource {
     const tpl = buildTemplates(this.t0);
     this.templates = tpl.templates;
     this.versions = tpl.versions;
+    this.links = buildLinks(this.t0);
     // Three deliveries that "land" a few seconds apart after construction.
     const r = rng(0x1234abcd);
     this.inflight = [4000, 9000, 16000].map((offset) => ({
@@ -351,6 +450,41 @@ export class MockDataSource implements DataSource {
   async previewTemplate(input: PreviewInput): Promise<PreviewResult> {
     await this.latency();
     return { subject: renderPreview(input.subject), body: renderPreview(input.body) };
+  }
+
+  // --- Links ---
+
+  async listLinks(): Promise<LinkSummary[]> {
+    await this.latency();
+    return this.links.map(toSummary);
+  }
+
+  async getLink(code: string): Promise<LinkDetail> {
+    await this.latency();
+    const link = this.links.find((l) => l.code === code);
+    if (!link) throw new Error("not found");
+    return link;
+  }
+
+  async createLink(longUrl: string): Promise<ShortenResult> {
+    await this.latency();
+    const target = normalizeLongUrl(longUrl);
+    // Same dedup rule as link-svc: one code per (tenant, long URL).
+    const existing = this.links.find((l) => l.target === target);
+    if (existing) return { code: existing.code, shortUrl: existing.shortUrl };
+
+    const code = Array.from({ length: 10 }, () => pick(this.linkRng, [...BASE62])).join("");
+    const created: LinkDetail = {
+      code,
+      shortUrl: `${MOCK_LINK_BASE}/${code}`,
+      target,
+      clicks: 0,
+      createdAt: iso(this.now()),
+      series: Array.from({ length: 14 }, () => 0),
+      recent: [],
+    };
+    this.links = [created, ...this.links];
+    return { code, shortUrl: created.shortUrl };
   }
 }
 

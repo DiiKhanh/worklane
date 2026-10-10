@@ -84,3 +84,39 @@ describe("MockDataSource templates", () => {
     expect(after.versions.find((v) => v.id === draft.id)?.status).toBe("published");
   });
 });
+
+describe("MockDataSource links", () => {
+  it("lists seeded links and returns a 14-day series with recent clicks", async () => {
+    const ds = new MockDataSource({ now: () => 1_700_000_000_000 });
+    const list = await ds.listLinks();
+    expect(list.length).toBeGreaterThan(0);
+    const detail = await ds.getLink(list[0].code);
+    expect(detail.series).toHaveLength(14);
+    expect(detail.recent.length).toBeGreaterThan(0);
+    expect(detail.shortUrl.endsWith(`/${detail.code}`)).toBe(true);
+  });
+
+  it("creates a link, puts it first in the list and dedups the same URL", async () => {
+    const ds = new MockDataSource({ now: () => 1_700_000_000_000 });
+    const before = await ds.listLinks();
+    const first = await ds.createLink("  https://example.com/a  ");
+    expect(first.code).toMatch(/^[0-9a-zA-Z]{10}$/);
+    const again = await ds.createLink("https://example.com/a");
+    expect(again).toEqual(first);
+    const after = await ds.listLinks();
+    expect(after).toHaveLength(before.length + 1);
+    expect(after[0]).toMatchObject({ code: first.code, target: "https://example.com/a", clicks: 0 });
+    expect((await ds.getLink(first.code)).series).toHaveLength(14);
+  });
+
+  it("rejects a URL that is not absolute http(s)", async () => {
+    const ds = new MockDataSource({ now: () => 1_700_000_000_000 });
+    await expect(ds.createLink("javascript:alert(1)")).rejects.toThrow(/invalid url/);
+    await expect(ds.createLink("/relative")).rejects.toThrow(/invalid url/);
+  });
+
+  it("reports an unknown code as not found", async () => {
+    const ds = new MockDataSource({ now: () => 1_700_000_000_000 });
+    await expect(ds.getLink("nope")).rejects.toThrow(/not found/);
+  });
+});

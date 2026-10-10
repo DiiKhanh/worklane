@@ -10,7 +10,9 @@ import {
   MousePointerClick,
   TrendingUp,
 } from "lucide-react";
-import type { Link, LinkClick } from "@/lib/roadmap/links";
+import type { LinkClick } from "@/lib/api/types";
+import { useLink } from "@/lib/queries/use-links";
+import { stripScheme, timeAgo } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { SectionHeading } from "@/components/common/section-heading";
 import { Panel } from "@/components/common/panel";
@@ -25,20 +27,20 @@ const clickColumns: ColumnDef<LinkClick>[] = [
     header: "When",
     cell: ({ row }) => (
       <span className="text-sm text-muted-foreground tabular-nums">
-        {row.original.ts}
+        {timeAgo(row.original.ts)}
       </span>
     ),
   },
   {
     accessorKey: "ref",
     header: "Source",
-    cell: ({ row }) => <span className="text-sm">{row.original.ref}</span>,
+    cell: ({ row }) => <span className="text-sm">{row.original.ref || "Direct"}</span>,
   },
   {
     accessorKey: "geo",
     header: "Location",
     cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">{row.original.geo}</span>
+      <span className="text-sm text-muted-foreground">{row.original.geo || "-"}</span>
     ),
   },
   {
@@ -52,16 +54,47 @@ const clickColumns: ColumnDef<LinkClick>[] = [
   },
 ];
 
-export function LinkDetail({ link, onBack }: { link: Link; onBack: () => void }) {
-  const peak = Math.max(...link.series);
+export function LinkDetail({ code, onBack }: { code: string; onBack: () => void }) {
+  const { data: link, isLoading, error } = useLink(code);
+
+  const back = (
+    <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2.5 mb-3">
+      <ArrowLeft className="size-4" />
+      Links
+    </Button>
+  );
+
+  if (isLoading || !link) {
+    return (
+      <div>
+        {back}
+        {error ? (
+          <p role="alert" className="py-10 text-center text-sm text-destructive">
+            Could not load this link. {error.message}
+          </p>
+        ) : (
+          <div className="py-10 text-center text-sm text-muted-foreground">Loading link…</div>
+        )}
+      </div>
+    );
+  }
+
+  const peak = Math.max(0, ...link.series);
+  const last14 = link.series.reduce((sum, v) => sum + v, 0);
+
+  async function copyLink(shortUrl: string) {
+    try {
+      await navigator.clipboard.writeText(shortUrl);
+    } catch {
+      // Clipboard can be unavailable (insecure context); fail quietly.
+    }
+  }
+
   return (
     <div>
-      <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2.5 mb-3">
-        <ArrowLeft className="size-4" />
-        Links
-      </Button>
+      {back}
       <SectionHeading
-        title={`wl.link/${link.code}`}
+        title={stripScheme(link.shortUrl)}
         description={link.target}
         action={
           <div className="flex gap-2">
@@ -75,7 +108,7 @@ export function LinkDetail({ link, onBack }: { link: Link; onBack: () => void })
               <ExternalLink className="size-3.5" />
               Open target
             </Button>
-            <Button size="sm" variant="outline">
+            <Button size="sm" variant="outline" onClick={() => copyLink(link.shortUrl)}>
               <Copy className="size-3.5" />
               Copy link
             </Button>
@@ -93,8 +126,8 @@ export function LinkDetail({ link, onBack }: { link: Link; onBack: () => void })
           >
             <CountUp value={link.clicks} />
           </StatCard>
-          <StatCard label="CTR" icon={TrendingUp} hint="of messages carrying it">
-            <CountUp value={link.ctr} format={(v) => `${Math.round(v * 100)}%`} />
+          <StatCard label="Last 14 days" icon={TrendingUp} hint="clicks in the window">
+            <CountUp value={last14} />
           </StatCard>
           <StatCard
             label="Peak day"
@@ -122,12 +155,7 @@ export function LinkDetail({ link, onBack }: { link: Link; onBack: () => void })
           title="Recent clicks"
           description="Append-only click events emit link.clicked to analytics"
         >
-          <DataTable
-            columns={clickColumns}
-            data={link.recent}
-            pageSize={8}
-            rowKey={(c) => c.ts + c.geo}
-          />
+          <DataTable columns={clickColumns} data={link.recent} pageSize={8} />
         </Panel>
       </div>
     </div>

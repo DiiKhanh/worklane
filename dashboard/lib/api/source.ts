@@ -3,11 +3,14 @@ import type {
   ApiKey,
   CreateTemplateInput,
   DeliveryLog,
+  LinkDetail,
+  LinkSummary,
   Overview,
   OtpRequest,
   PreviewInput,
   PreviewResult,
   SendResult,
+  ShortenResult,
   Template,
   TemplateDetail,
   TemplateVersion,
@@ -33,4 +36,9 @@ export interface DataSource {
   addVersion(id: string, input: AddVersionInput): Promise<TemplateVersion>;
   publishVersion(id: string, versionId: string): Promise<void>;
   previewTemplate(input: PreviewInput): Promise<PreviewResult>;
+
+  // Links
+  listLinks(): Promise<LinkSummary[]>;
+  getLink(code: string): Promise<LinkDetail>;
+  createLink(longUrl: string): Promise<ShortenResult>;
 }

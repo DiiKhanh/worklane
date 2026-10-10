@@ -1,19 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import {
-  Link as LinkIcon,
-  MousePointerClick,
-  TrendingUp,
-  Zap,
-} from "lucide-react";
-import type { Link } from "@/lib/roadmap/links";
-import { LINKS, LINK_KPIS } from "@/lib/roadmap/links";
+import { Link as LinkIcon, MousePointerClick } from "lucide-react";
+import type { LinkSummary, ShortenResult } from "@/lib/api/types";
+import { useCreateLink, useLinks } from "@/lib/queries/use-links";
+import { stripScheme, timeAgo } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SectionHeading } from "@/components/common/section-heading";
-import { RoadmapNote } from "@/components/common/roadmap-note";
 import { Panel } from "@/components/common/panel";
 import { StatCard } from "@/components/common/stat-card";
 import { CountUp } from "@/components/common/count-up";
@@ -21,17 +16,14 @@ import { DataTable } from "@/components/common/data-table";
 import { CopyButton } from "@/components/common/copy-button";
 import { LinkDetail } from "./link-detail";
 
-const columns: ColumnDef<Link>[] = [
+const columns: ColumnDef<LinkSummary>[] = [
   {
     accessorKey: "code",
-    header: "Short code",
+    header: "Short link",
     cell: ({ row }) => (
       <span className="group/row inline-flex items-center gap-1.5">
-        <span className="font-mono text-[13px]">wl.link/{row.original.code}</span>
-        <CopyButton
-          value={`https://wl.link/${row.original.code}`}
-          label="Copy short link"
-        />
+        <span className="font-mono text-[13px]">{stripScheme(row.original.shortUrl)}</span>
+        <CopyButton value={row.original.shortUrl} label="Copy short link" />
       </span>
     ),
   },
@@ -54,28 +46,41 @@ const columns: ColumnDef<Link>[] = [
     ),
   },
   {
-    accessorKey: "ctr",
-    header: "CTR",
-    cell: ({ row }) => (
-      <span className="font-mono text-[13px] tabular-nums text-muted-foreground">
-        {Math.round(row.original.ctr * 100)}%
-      </span>
-    ),
-  },
-  {
-    accessorKey: "created",
+    accessorKey: "createdAt",
     header: "Created",
     cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">{row.original.created}</span>
+      <span className="text-sm text-muted-foreground">{timeAgo(row.original.createdAt)}</span>
     ),
   },
 ];
 
 export function LinksView() {
-  const [open, setOpen] = useState<Link | null>(null);
+  const { data: rows = [], isLoading, error: loadError } = useLinks();
+  const create = useCreateLink();
+  const [open, setOpen] = useState<string | null>(null);
+  const [longUrl, setLongUrl] = useState("");
+  const [created, setCreated] = useState<ShortenResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   if (open) {
-    return <LinkDetail link={open} onBack={() => setOpen(null)} />;
+    return <LinkDetail key={open} code={open} onBack={() => setOpen(null)} />;
   }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const value = longUrl.trim();
+    if (!value) return;
+    setError(null);
+    setCreated(null);
+    try {
+      setCreated(await create.mutateAsync(value));
+      setLongUrl("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create the link");
+    }
+  }
+
+  const totalClicks = rows.reduce((sum, l) => sum + l.clicks, 0);
 
   return (
     <div>
@@ -83,66 +88,71 @@ export function LinksView() {
         title="Links"
         description="Short links carried by notifications, and what they earn. Select a link for its clicks."
       />
-      <RoadmapNote />
       <div className="grid gap-4">
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4">
           <StatCard
-            label="Links created"
+            label="Links"
             icon={LinkIcon}
             accent="var(--state-sent)"
-            hint="last 30 days"
+            hint="most recent, this tenant"
           >
-            <CountUp value={LINK_KPIS.created} />
+            <CountUp value={rows.length} />
           </StatCard>
           <StatCard
             label="Clicks"
             icon={MousePointerClick}
             accent="var(--state-verified)"
-            hint="302 redirects served"
+            hint="302 redirects served by these links"
           >
-            <CountUp value={LINK_KPIS.clicks} />
-          </StatCard>
-          <StatCard
-            label="Click rate"
-            icon={TrendingUp}
-            hint="of delivered messages"
-          >
-            <CountUp
-              value={LINK_KPIS.clickRate}
-              format={(v) => `${Math.round(v * 100)}%`}
-            />
-          </StatCard>
-          <StatCard
-            label="Cache hit"
-            icon={Zap}
-            accent="var(--state-requested)"
-            hint="Redis cache-aside"
-          >
-            <CountUp
-              value={LINK_KPIS.cacheHit}
-              format={(v) => `${Math.round(v * 100)}%`}
-            />
+            <CountUp value={totalClicks} />
           </StatCard>
         </div>
         <Panel
           title="Shorten a URL"
           description="base62 over a distributed id - codes are never enumerable"
         >
-          <div className="flex gap-2">
-            <Input placeholder="https://worklane.io/settings/notifications" />
-            <Button className="shrink-0">
-              <LinkIcon className="size-4" />
-              Create
-            </Button>
-          </div>
-          <div className="mt-4">
-            <DataTable
-              columns={columns}
-              data={LINKS}
-              pageSize={10}
-              rowKey={(l) => l.code}
-              onRowClick={setOpen}
+          <form onSubmit={submit} className="flex gap-2">
+            <Input
+              aria-label="Long URL"
+              placeholder="https://worklane.io/settings/notifications"
+              value={longUrl}
+              onChange={(e) => setLongUrl(e.target.value)}
             />
+            <Button type="submit" className="shrink-0" disabled={create.isPending || !longUrl.trim()}>
+              <LinkIcon className="size-4" />
+              {create.isPending ? "Creating…" : "Create"}
+            </Button>
+          </form>
+          {error && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          {created && (
+            <p className="group/row mt-2 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+              Short link ready:
+              <span className="font-mono text-[13px] text-foreground">
+                {stripScheme(created.shortUrl)}
+              </span>
+              <CopyButton value={created.shortUrl} label="Copy short link" />
+            </p>
+          )}
+          <div className="mt-4">
+            {isLoading ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">Loading links…</div>
+            ) : loadError ? (
+              <p role="alert" className="py-10 text-center text-sm text-destructive">
+                Could not load links. {loadError.message}
+              </p>
+            ) : (
+              <DataTable
+                columns={columns}
+                data={rows}
+                pageSize={10}
+                rowKey={(l) => l.code}
+                onRowClick={(l) => setOpen(l.code)}
+              />
+            )}
           </div>
         </Panel>
       </div>

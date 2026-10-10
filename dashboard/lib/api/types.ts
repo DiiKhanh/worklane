@@ -100,3 +100,27 @@ export type CreateTemplateInput = {
   note?: string;
 };
 export type AddVersionInput = { subject: string; body: string; note?: string };
+
+// --- Links (URL shortener) ---
+
+export type LinkSummary = {
+  code: string;
+  shortUrl: string;
+  target: string;
+  clicks: number; // lifetime
+  createdAt: string;
+};
+
+export type LinkClick = {
+  ts: string;
+  ref: string; // referer, "" when the click carried none
+  geo: string; // "" until the backend does geo lookup
+  device: string;
+};
+
+export type LinkDetail = LinkSummary & {
+  series: number[]; // daily clicks for the last 14 UTC days, oldest first
+  recent: LinkClick[]; // newest first
+};
+
+export type ShortenResult = { code: string; shortUrl: string };

@@ -12,6 +12,7 @@ export function createDataSource(): DataSource {
   if (kind === "live") {
     return new LiveDataSource({
       baseUrl: process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8888",
+      linkBaseUrl: process.env.NEXT_PUBLIC_LINK_BASE ?? "http://link.localhost",
       getToken: () => useUIStore.getState().token,
     });
   }
