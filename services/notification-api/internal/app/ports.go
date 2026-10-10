@@ -6,10 +6,20 @@ package app
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/duykhanh/worklane/services/notification-api/internal/domain"
 )
+
+// ErrInvalidAPIKey is returned by an Introspector for an unknown or revoked API key, as
+// opposed to the identity service being unreachable.
+var ErrInvalidAPIKey = errors.New("invalid api key")
+
+// Introspector resolves an opaque API key to a tenant via auth-svc.
+type Introspector interface {
+	Introspect(ctx context.Context, apiKey string) (tenantID string, err error)
+}
 
 // Clock abstracts the current time so use cases are deterministic under test.
 type Clock interface{ Now() time.Time }
