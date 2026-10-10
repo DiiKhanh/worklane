@@ -127,3 +127,19 @@ func TestValidateMessage(t *testing.T) {
 		})
 	}
 }
+
+// A subject is one header line: a line break smuggled in through a variable would let
+// the sender's data add mail headers (or a fake body) in the SMTP provider.
+func TestRenderMessageSubjectIsSingleLine(t *testing.T) {
+	msg, err := RenderMessage(context.Background(), "Hi {{name}}", "Line 1\r\n{{note}}",
+		map[string]string{"name": "An\r\nBcc: evil@example.com\n\nfake body", "note": "a\nb"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Subject != "Hi An Bcc: evil@example.com fake body" {
+		t.Fatalf("subject must have its line breaks collapsed, got %q", msg.Subject)
+	}
+	if msg.Body != "Line 1\r\na\nb" {
+		t.Fatalf("body line breaks must be kept, got %q", msg.Body)
+	}
+}

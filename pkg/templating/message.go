@@ -36,11 +36,16 @@ var messageTokenRe = regexp.MustCompile(`\{\{\s*(?:link\s+"([^"]*)"|([a-zA-Z0-9_
 // the ones messageTokenRe would silently leave in the delivered text.
 var looseTokenRe = regexp.MustCompile(`\{\{[^{}]*\}\}`)
 
+// lineBreakRe matches a run of line breaks, which a single-line subject cannot carry.
+var lineBreakRe = regexp.MustCompile(`[\r\n]+`)
+
 // RenderMessage substitutes every {{var}} with its value from vars and every
 // {{link "url"}} with the short URL returned by shorten. Substitution is a single
 // literal pass: a substituted value is never scanned again, so a variable whose value
 // contains "{{...}}" cannot inject a token. A variable absent from vars renders empty
 // and is reported in Message.Missing. Each distinct URL is shortened once per render.
+// The subject is a single header line, so line breaks in it (from the template or from
+// a variable) collapse to a space: a variable cannot add mail headers.
 func RenderMessage(ctx context.Context, subject, body string, vars map[string]string, shorten Shortener) (Message, error) {
 	short := map[string]string{}
 	for _, field := range []string{subject, body} {
@@ -77,7 +82,7 @@ func RenderMessage(ctx context.Context, subject, body string, vars map[string]st
 			return val
 		})
 	}
-	msg := Message{Subject: repl(subject), Body: repl(body)}
+	msg := Message{Subject: lineBreakRe.ReplaceAllString(repl(subject), " "), Body: repl(body)}
 	for name := range missing {
 		msg.Missing = append(msg.Missing, name)
 	}
