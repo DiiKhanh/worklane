@@ -36,6 +36,9 @@ var (
 	// linkHost is the public short-link host Traefik routes to link-svc. It is sent as the
 	// Host header against apiBase, so the test needs no DNS entry for it.
 	linkHost = env("E2E_LINK_HOST", "link.localhost")
+	// notifyHost is the host Traefik routes to notification-api's full API (its
+	// /v1/templates collides with otp-api's on the default host). Sent as the Host header.
+	notifyHost = env("E2E_NOTIFY_HOST", "notify.localhost")
 )
 
 func newID() string {
@@ -77,7 +80,7 @@ func postJSON(t *testing.T, path, key, body string) int {
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return resp.StatusCode
 }
@@ -97,7 +100,7 @@ func waitForCode(t *testing.T, recipient string) string {
 				} `json:"items"`
 			}
 			b, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			_ = json.Unmarshal(b, &out)
 			if len(out.Items) > 0 {
 				if m := codeRe.FindStringSubmatch(out.Items[0].Content.Body); m != nil {

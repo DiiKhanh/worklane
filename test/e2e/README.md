@@ -26,6 +26,12 @@ What it asserts:
 - `GET /<code>` on the link host → `302` to the original URL; an unknown code → `404`.
 - Clicks flow through Kafka and link-dispatcher into `GET /v1/links/:code` (`clicks`, `series`, `recent`).
 - `POST /v1/links` without a key → `401`; another tenant's code → `404`.
+- A template created on the notification host, then `POST /v1/notifications` → `202`, and the
+  delivered email (MailHog) equals the `POST /v1/templates/:id/preview` render.
+- Re-sending with the same `idempotency_key` → `200` with the same id and no second email.
+- A `marketing` send to a `user_ref` opted out of email → `suppressed`, no delivery; a
+  `transactional` send to the same user still delivers.
+- Notification endpoints without a key → `401`; another tenant's template → `404`.
 
 ## Overrides (env)
 
@@ -35,6 +41,7 @@ What it asserts:
 | `E2E_MAILHOG` | `http://localhost:8025` | MailHog HTTP API |
 | `MYSQL_DSN` | `root:secret@tcp(localhost:3306)/otp?...` | MySQL for seeding |
 | `E2E_LINK_HOST` | `link.localhost` | Short-link host, sent as the `Host` header to the API base |
+| `E2E_NOTIFY_HOST` | `notify.localhost` | notification-api host, sent as the `Host` header to the API base |
 
 ## Web UIs while the stack is up
 

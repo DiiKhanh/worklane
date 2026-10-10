@@ -1,7 +1,8 @@
-# Traefik dynamic config: route /v1/* to otp-api and /v1/links to link-svc, with an edge
-# rate-limit and CORS middleware. API-key auth is enforced inside the services, not here.
-# Traefik ranks routers by rule length, so the longer PathPrefix(`/v1/links`) wins over
-# PathPrefix(`/v1`); the priorities below make that explicit instead of implicit.
+# Traefik dynamic config: route /v1/* to otp-api, /v1/links to link-svc and
+# /v1/notifications + /v1/preferences to notification-api, with an edge rate-limit and CORS
+# middleware. API-key auth is enforced inside the services, not here.
+# Traefik ranks routers by rule length, so a longer PathPrefix wins over PathPrefix(`/v1`);
+# the priorities below make that explicit instead of implicit.
 http:
   routers:
     otpapi:
@@ -18,6 +19,27 @@ http:
       entryPoints:
         - web
       service: linksvc
+      middlewares:
+        - otp-ratelimit
+        - otp-cors
+    notificationapi:
+      rule: "PathPrefix(`/v1/notifications`) || PathPrefix(`/v1/preferences`)"
+      priority: 100
+      entryPoints:
+        - web
+      service: notificationapi
+      middlewares:
+        - otp-ratelimit
+        - otp-cors
+    # notification-api's own /v1/templates collides with otp-api's Template Studio routes on
+    # the default host, so its full API is reachable on a dedicated host instead. Priority
+    # above the path routers so every /v1 path on this host lands on notification-api.
+    notificationhost:
+      rule: "Host(`notify.localhost`) && PathPrefix(`/v1`)"
+      priority: 200
+      entryPoints:
+        - web
+      service: notificationapi
       middlewares:
         - otp-ratelimit
         - otp-cors
@@ -49,6 +71,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://link-svc:8890"
+    notificationapi:
+      loadBalancer:
+        servers:
+          - url: "http://notification-api:8891"
     authsvc:
       loadBalancer:
         servers:
@@ -70,6 +96,7 @@ http:
         accessControlAllowMethods:
           - GET
           - POST
+          - PUT
           - DELETE
           - OPTIONS
         accessControlAllowOriginList:

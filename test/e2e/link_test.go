@@ -36,7 +36,7 @@ func linkJSON(t *testing.T, method, path, key, body string, out any) int {
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("%s %s: read body: %v", method, path, err)
@@ -63,7 +63,7 @@ func follow(t *testing.T, code string) (int, string) {
 	if err != nil {
 		t.Fatalf("GET /%s: %v", code, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return resp.StatusCode, resp.Header.Get("Location")
 }

@@ -123,11 +123,36 @@ services:
       OTP_EMAIL_BODY: "Your verification code is {{code}}. It expires in {{expiry}}."
       OTP_SMS_BODY: "Your verification code is {{code}}. It expires in {{expiry}}."
       OTP_EXPIRY_TEXT: "5 minutes"
+      # Setting this DSN turns on the notification handlers (unset = OTP only).
+      NOTIFICATION_MYSQL_DSN: "root:secret@tcp(mysql:3306)/notification?parseTime=true&multiStatements=true"
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
       redpanda: { condition: service_healthy }
       otp-api: { condition: service_started } # otp-api owns migrations; wait for its schema
+      notification-api: { condition: service_started } # owns the notification migrations
+
+  notification-api:
+    build:
+      context: ../..
+      dockerfile: services/notification-api/Dockerfile
+    restart: on-failure # ride out the MySQL first-init restart window (like k8s self-heal)
+    environment:
+      MYSQL_DSN: "root:secret@tcp(mysql:3306)/notification?parseTime=true&multiStatements=true"
+      AUTH_SVC_URL: "http://auth-svc:8889"
+      INTERNAL_API_TOKEN: "${INTERNAL_API_TOKEN:-dev-internal-token}"
+      REDIS_URL: "redis://redis:6379/0"
+      KAFKA_BROKERS: "redpanda:9092"
+      HTTP_ADDR: ":8891"
+      # notification-api only verifies JWTs, so it gets the public key (mounted, not committed).
+      AUTH_JWT_PUBLIC_KEY_FILE: "/secrets/auth_pub.pem"
+    volumes:
+      - "./secrets:/secrets:ro"
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      auth-svc: { condition: service_started }
 
   link-svc:
     build:
