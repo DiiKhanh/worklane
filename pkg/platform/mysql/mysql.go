@@ -35,7 +35,7 @@ func Migrate(dsn, migrationsDir string) error {
 	if err != nil {
 		return fmt.Errorf("mysql: migrate init: %w", err)
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("mysql: migrate up: %w", err)
 	}

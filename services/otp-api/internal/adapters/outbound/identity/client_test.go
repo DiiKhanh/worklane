@@ -17,7 +17,7 @@ func TestClient_Introspect_Active(t *testing.T) {
 			t.Error("missing X-Internal-Token header")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"active":true,"tenant_id":"t1"}`))
+		_, _ = w.Write([]byte(`{"active":true,"tenant_id":"t1"}`))
 	}))
 	defer srv.Close()
 
@@ -34,7 +34,7 @@ func TestClient_Introspect_Active(t *testing.T) {
 func TestClient_Introspect_Inactive(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"active":false}`))
+		_, _ = w.Write([]byte(`{"active":false}`))
 	}))
 	defer srv.Close()
 

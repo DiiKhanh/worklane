@@ -57,7 +57,7 @@ func (p *Provider) Send(ctx context.Context, to, subject, body string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("resend: do: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

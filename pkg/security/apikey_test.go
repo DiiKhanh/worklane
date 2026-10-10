@@ -27,7 +27,8 @@ func TestGenerateAPIKey_FormatAndUniqueness(t *testing.T) {
 }
 
 func TestHashKey_DeterministicAndDistinct(t *testing.T) {
-	if HashKey("abc") != HashKey("abc") {
+	first, second := HashKey("abc"), HashKey("abc")
+	if first != second {
 		t.Fatal("hash must be deterministic")
 	}
 	if HashKey("abc") == HashKey("abd") {

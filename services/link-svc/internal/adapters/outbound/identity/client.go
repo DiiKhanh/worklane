@@ -61,7 +61,7 @@ func (c *Client) Introspect(ctx context.Context, apiKey string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("identity: transport: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("identity: unexpected status %d", resp.StatusCode)

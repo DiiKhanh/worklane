@@ -49,7 +49,7 @@ func (p *Provider) Send(ctx context.Context, to, body string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("twilio: do: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
