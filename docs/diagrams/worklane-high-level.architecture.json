@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Worklane OTP High-Level Architecture",
+    "locale": "en",
+    "output": "worklane-high-level.html",
+    "quality_profile": "showcase",
+    "viewBox": [1580, 820],
+    "views": [
+      {
+        "id": "primary-path",
+        "label": "Primary OTP delivery path",
+        "focus": ["actors", "dashboard", "gateway", "otpApi", "eventBus", "dispatcher", "providers"],
+        "note": "Follow a request from a user or API client to the email or SMS provider."
+      },
+      {
+        "id": "identity-data",
+        "label": "Identity and data",
+        "focus": ["dashboard", "gateway", "authService", "identityDb", "otpApi", "redis", "otpDb"],
+        "note": "JWTs, API keys, ephemeral OTP state, and durable service data."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "actors",
+      "type": "external",
+      "label": "Users & API Clients",
+      "pos": [30, 300],
+      "size": [140, 72]
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "Dashboard",
+      "pos": [230, 300],
+      "size": [150, 72]
+    },
+    {
+      "id": "gateway",
+      "type": "cloud",
+      "label": "Traefik Gateway",
+      "pos": [440, 300],
+      "size": [160, 72]
+    },
+    {
+      "id": "otpApi",
+      "type": "backend",
+      "label": "otp-api",
+      "pos": [660, 300],
+      "size": [170, 72]
+    },
+    {
+      "id": "eventBus",
+      "type": "messagebus",
+      "label": "Redpanda / Kafka",
+      "pos": [890, 300],
+      "size": [170, 72]
+    },
+    {
+      "id": "dispatcher",
+      "type": "backend",
+      "label": "otp-dispatcher",
+      "pos": [1120, 300],
+      "size": [170, 72]
+    },
+    {
+      "id": "providers",
+      "type": "external",
+      "label": "Email / SMS providers",
+      "pos": [1350, 300],
+      "size": [180, 72]
+    },
+    {
+      "id": "authService",
+      "type": "security",
+      "label": "auth-svc",
+      "pos": [660, 80],
+      "size": [170, 72]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "pos": [660, 520],
+      "size": [170, 72]
+    },
+    {
+      "id": "otpDb",
+      "type": "database",
+      "label": "OTP Database",
+      "pos": [890, 520],
+      "size": [170, 72]
+    },
+    {
+      "id": "identityDb",
+      "type": "database",
+      "label": "Identity Database",
+      "pos": [890, 80],
+      "size": [170, 72]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Dashboard hosting: Unknown provider",
+      "wraps": ["dashboard"],
+      "pad": 24
+    },
+    {
+      "kind": "region",
+      "label": "Worklane self-hosted k3s cluster",
+      "wraps": ["gateway", "authService", "identityDb", "otpApi", "eventBus", "dispatcher", "redis", "otpDb"],
+      "pad": 34
+    },
+    {
+      "kind": "security-group",
+      "label": "Private application and data plane",
+      "wraps": ["authService", "identityDb", "otpApi", "eventBus", "dispatcher", "redis", "otpDb"],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "actorsDashboard",
+      "from": "actors",
+      "to": "dashboard",
+      "label": "HTTPS UI",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dashboardGateway",
+      "from": "dashboard",
+      "to": "gateway",
+      "label": "REST/JWT",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gatewayApi",
+      "from": "gateway",
+      "to": "otpApi",
+      "label": "/v1 OTP",
+      "labelDy": 53,
+      "variant": "emphasis"
+    },
+    {
+      "id": "apiEvents",
+      "from": "otpApi",
+      "to": "eventBus",
+      "label": "otp.requested",
+      "labelDy": -37,
+      "variant": "emphasis"
+    },
+    {
+      "id": "eventsDispatcher",
+      "from": "eventBus",
+      "to": "dispatcher",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dispatcherProviders",
+      "from": "dispatcher",
+      "to": "providers",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gatewayAuth",
+      "from": "gateway",
+      "to": "authService",
+      "label": "/auth/*",
+      "variant": "security"
+    },
+    {
+      "id": "apiAuth",
+      "from": "otpApi",
+      "to": "authService",
+      "label": "API key introspection",
+      "variant": "security"
+    },
+    {
+      "id": "authIdentityDb",
+      "from": "authService",
+      "to": "identityDb"
+    },
+    {
+      "id": "apiRedis",
+      "from": "otpApi",
+      "to": "redis",
+      "label": "hash · TTL · limits",
+      "labelAt": [745, 430]
+    },
+    {
+      "id": "apiMysql",
+      "from": "otpApi",
+      "to": "otpDb"
+    },
+    {
+      "id": "dispatcherMysql",
+      "from": "dispatcher",
+      "to": "otpDb",
+      "label": "delivery logs · state"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Primary path",
+      "items": [
+        "Traefik routes synchronous HTTP requests to otp-api",
+        "Redpanda/Kafka decouples the API from OTP delivery",
+        "otp-dispatcher selects email or SMS from the requested channel"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Identity and security",
+      "items": [
+        "auth-svc issues EdDSA JWTs for dashboard sessions",
+        "otp-api verifies JWTs locally and introspects API keys over internal HTTP",
+        "Plaintext OTP codes are never stored in MySQL"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Known unknowns",
+      "items": [
+        "The dashboard hosting provider and network boundary are not confirmed",
+        "No cloud provider or multi-region topology is inferred"
+      ]
+    }
+  ]
+}
