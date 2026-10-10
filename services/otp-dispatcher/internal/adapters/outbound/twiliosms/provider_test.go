@@ -2,6 +2,7 @@ package twiliosms_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/twiliosms"
+	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/app"
 )
 
 func TestSend_PostsFormAndReturnsSID(t *testing.T) {
@@ -51,5 +53,25 @@ func TestSend_ErrorOnNon2xx(t *testing.T) {
 	p := twiliosms.New("AC", "bad", "+1", srv.URL, srv.Client())
 	if _, err := p.Send(context.Background(), "+84901234567", "b"); err == nil {
 		t.Fatal("non-2xx must return an error")
+	}
+}
+
+// Only a definitive 4xx rejection is permanent; 408, 429 and 5xx stay retryable.
+func TestSend_ClassifiesPermanentStatuses(t *testing.T) {
+	for status, permanent := range map[int]bool{
+		http.StatusBadRequest: true, http.StatusUnprocessableEntity: true,
+		http.StatusRequestTimeout: false, http.StatusTooManyRequests: false,
+		http.StatusInternalServerError: false, http.StatusServiceUnavailable: false,
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "nope", status)
+		}))
+		p := twiliosms.New("AC", "tok", "+1", srv.URL, srv.Client())
+		_, err := p.Send(context.Background(), "+84901234567", "b")
+		srv.Close()
+		var perm *app.PermanentError
+		if err == nil || errors.As(err, &perm) != permanent {
+			t.Fatalf("status %d: err %v, want permanent=%v", status, err, permanent)
+		}
 	}
 }

@@ -3,11 +3,14 @@ package resendmail_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/app"
 
 	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/adapters/outbound/resendmail"
 )
@@ -52,5 +55,25 @@ func TestSend_ErrorOnNon2xx(t *testing.T) {
 	p := resendmail.New("bad", "otp@worklane.dev", srv.URL, srv.Client())
 	if _, err := p.Send(context.Background(), "user@example.com", "s", "b"); err == nil {
 		t.Fatal("non-2xx response must return an error")
+	}
+}
+
+// Only a definitive 4xx rejection is permanent; 408, 429 and 5xx stay retryable.
+func TestSend_ClassifiesPermanentStatuses(t *testing.T) {
+	for status, permanent := range map[int]bool{
+		http.StatusBadRequest: true, http.StatusUnprocessableEntity: true,
+		http.StatusRequestTimeout: false, http.StatusTooManyRequests: false,
+		http.StatusInternalServerError: false, http.StatusServiceUnavailable: false,
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "nope", status)
+		}))
+		p := resendmail.New("k", "otp@worklane.dev", srv.URL, srv.Client())
+		_, err := p.Send(context.Background(), "user@example.com", "s", "b")
+		srv.Close()
+		var perm *app.PermanentError
+		if err == nil || errors.As(err, &perm) != permanent {
+			t.Fatalf("status %d: err %v, want permanent=%v", status, err, permanent)
+		}
 	}
 }

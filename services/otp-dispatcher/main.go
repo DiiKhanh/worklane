@@ -1,6 +1,7 @@
 // Command otp-dispatcher is the asynchronous delivery service: it consumes otp.requested
 // from Kafka, sends the email via Resend, records the delivery, and publishes
-// otp.sent / otp.failed (and otp.dlq on failure).
+// otp.sent / otp.failed (and otp.dlq on failure). When NOTIFICATION_MYSQL_DSN is set it
+// also consumes the per-channel notification.*.requested topics (see notification.go).
 //
 // Composition root: reads config, builds adapters, injects them into the handler, and
 // runs the consumer until interrupted.
@@ -45,6 +46,11 @@ func main() {
 	twilioToken := config.Env("TWILIO_AUTH_TOKEN", "")
 	twilioFrom := config.Env("TWILIO_FROM", "")
 	twilioBase := config.Env("TWILIO_BASE_URL", "https://api.twilio.com")
+
+	notif, err := loadNotificationSettings()
+	if err != nil {
+		log.Fatalf("otp-dispatcher: notification config: %v", err)
+	}
 
 	db, err := mysql.Open(dsn)
 	if err != nil {
@@ -93,11 +99,13 @@ func main() {
 		},
 	}
 
+	// One Sender registry serves both the OTP handler and the notification handler.
+	senders := map[string]app.Sender{
+		"email": app.NewEmailSender(mail, providerLabel),
+		"sms":   app.NewSMSSender(sms, "twilio"),
+	}
 	handler := app.NewHandler(app.Deps{
-		Senders: map[string]app.Sender{
-			"email": app.NewEmailSender(mail, providerLabel),
-			"sms":   app.NewSMSSender(sms, "twilio"),
-		},
+		Senders:   senders,
 		Templates: templates,
 		Repo:      repo,
 		Pub:       prod,
@@ -118,6 +126,19 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Generic notifications are opt-in: without NOTIFICATION_MYSQL_DSN the dispatcher
+	// stays a pure OTP worker, so a missing notification DB can never take OTP down.
+	if notif.enabled() {
+		closeNotif, err := startNotificationConsumers(ctx, notif, brokers, senders, prod)
+		if err != nil {
+			log.Fatalf("otp-dispatcher: %v", err)
+		}
+		defer closeNotif()
+	} else {
+		log.Println("otp-dispatcher: notification handlers disabled (NOTIFICATION_MYSQL_DSN not set)")
+	}
+
 	go func() {
 		log.Printf("otp-dispatcher: consuming %s (group %s)", requestedTopic, group)
 		if err := cons.Start(ctx); err != nil {

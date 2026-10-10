@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/duykhanh/worklane/services/otp-dispatcher/internal/app"
 )
 
 // Provider talks to the Resend REST API. baseURL is injected (rather than hard-coded to
@@ -61,11 +63,22 @@ func (p *Provider) Send(ctx context.Context, to, subject, body string) (string, 
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("resend: status %d: %s", resp.StatusCode, string(respBody))
+		err := fmt.Errorf("resend: status %d: %s", resp.StatusCode, string(respBody))
+		if permanentStatus(resp.StatusCode) {
+			return "", app.Permanent(err)
+		}
+		return "", err
 	}
 	var out sendResponse
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		return "", fmt.Errorf("resend: decode: %w", err)
 	}
 	return out.ID, nil
+}
+
+// permanentStatus reports whether a response status is a definitive rejection. A 4xx
+// means the request itself is wrong (bad recipient, bad credentials), so retrying the
+// same request cannot succeed - except 408 and 429, which ask the caller to try again.
+func permanentStatus(code int) bool {
+	return code >= 400 && code < 500 && code != http.StatusRequestTimeout && code != http.StatusTooManyRequests
 }
