@@ -1,6 +1,8 @@
 # Roadmap: Notification Platform + Link Service (future feature)
 
-**Status:** Active - gate cleared 2026-08-29; starting with sub-project **A (Template Studio)**.
+**Status:** Active - gate cleared 2026-08-29. **A (Template Studio)** shipped; **C (Link Service)**
+and **B (Notification Service)** are code-complete but not yet run against real infrastructure
+(see section 6).
 **Hard gate:** ~~Start only after OTP email + SMS are live in production and stable.~~
 **CLEARED 2026-08-29** - OTP email (Resend) and SMS (Twilio) both proven live in prod.
 **Noted:** 2026-08-16.
@@ -99,8 +101,37 @@ A new, self-contained bounded context `link-svc`.
    design `docs/superpowers/specs/2026-08-29-template-studio-design.md`, plan
    `docs/superpowers/plans/2026-08-29-template-studio.md`.
 2. **C - Link Service** (self-contained; the purest system-design learning; ships
-   independently).
+   independently). **CODE-COMPLETE 2026-10-10, not runtime-verified** - design
+   `docs/superpowers/specs/2026-08-19-link-service-url-shortener-design.md`, as-built notes in
+   `docs/architecture.md` section 7.
 3. **B - Notification Service** (largest; builds on A's templates and C's links).
+   **CODE-COMPLETE 2026-10-10, not runtime-verified** - design
+   `docs/superpowers/specs/2026-08-19-notification-system-design.md`, as-built notes in
+   `docs/architecture.md` section 8.
+
+### Open before B and C can be called shipped
+
+B and C were built with static checks and in-process tests only (gofmt, vet, golangci-lint,
+`go test -race`, and for the dashboard tsc, eslint, vitest). Sections 7-10 and 14 of both specs
+were audited against the code; the gaps that audit found in B (mail header injection through a
+subject variable, missing SMTP permanent-error classification) are fixed, and it found none in C.
+What remains:
+
+- **Runtime verification.** The compose stack, Traefik routes, CI image build, MySQL migrations
+  and the e2e tests (`test/e2e/link_test.go`, `test/e2e/notification_test.go`) have never been
+  executed. Nothing was sent through a real SMTP server.
+- **`{{link "url"}}` in notifications.** `notification-api` wires a `noShortener`, so a template
+  with `{{link}}` fails with `templating.ErrNoShortener`. Needs a decision on how notification-api
+  and the dispatcher authenticate to link-svc on a tenant's behalf (link-svc only accepts a tenant
+  JWT or API key today).
+- **Per-notification click events / CTR.** Depends on the decision above plus how a short link is
+  tagged with its notification.
+- **Templates screen cutover.** The dashboard's Templates screen still talks to otp-api; moving it
+  to notification-api is blocked on the `/v1/templates` route collision between the two services.
+- **k8s manifests.** `deploy/k8s` has nothing for link-svc, link-dispatcher or notification-api.
+  Remember that every link-svc replica needs a distinct `LINK_NODE_ID`.
+- **Possible hardening (not in the spec):** `ip_hash` is an unsalted sha256, which is reversible by
+  brute force over the IPv4 space; a per-deployment secret salt would close that.
 
 ## 7. Pitfalls to remember
 

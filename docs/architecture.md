@@ -257,24 +257,253 @@ flowchart LR
             A["otp-api<br/>main.go + internal/*"]
             AUTH["auth-svc<br/>main.go + internal/*"]
             D["otp-dispatcher<br/>main.go + internal/*"]
+            L["link-svc<br/>main.go + internal/*"]
+            LD["link-dispatcher<br/>main.go + internal/*"]
+            N["notification-api<br/>main.go + internal/*"]
             S["seed (CLI)"]
         end
         subgraph pkgs["pkg/ (shared)"]
             P1["platform/*<br/>config, mysql, redis, kafka"]
-            P2["contracts/otp<br/>event schema + State"]
+            P2["contracts/*<br/>otp, link, notification event schemas"]
             P3["security<br/>api-key hash/gen"]
+            P4["idgen<br/>Snowflake + Base62"]
+            P5["templating<br/>render engine"]
         end
     end
 
-    A --> P1 & P2 & P3
+    A --> P1 & P2 & P3 & P5
     AUTH --> P1 & P3
-    D --> P1 & P2
+    D --> P1 & P2 & P5
+    L --> P1 & P2 & P3 & P4
+    LD --> P1 & P2
+    N --> P1 & P2 & P3 & P5
     S --> P1 & P3
     A -. "no code import<br/>(Kafka + schema only)" .- D
+    L -. "Kafka link.clicked" .- LD
+    N -. "Kafka notification.*.requested" .- D
     A -. "HTTP introspect<br/>(API keys)" .-> AUTH
+    L -. "HTTP introspect" .-> AUTH
+    N -. "HTTP introspect" .-> AUTH
 ```
 
 Services never import each other's `internal/` (Go enforces it). otp-api and otp-dispatcher meet at
 the shared `pkg/contracts` event schema and the `otp` database; otp-api calls auth-svc over HTTP for
 API-key introspection. Those boundaries keep each service independently deployable and, later,
-independently extractable into its own repo.
+independently extractable into its own repo. link-svc / link-dispatcher and notification-api /
+otp-dispatcher follow the same sync-API + async-worker split (sections 7 and 8).
+
+---
+
+## 7. Link Service (sub-project C)
+
+> **Status (2026-10-12):** code-complete against the
+> [link service spec](superpowers/specs/2026-08-19-link-service-url-shortener-design.md) and covered
+> by in-process tests (faked ports, sqlite, miniredis). The compose / Traefik / CI wiring and
+> `test/e2e/link_test.go` have **not been run against real infrastructure yet**, and there are no
+> k8s manifests for these two services.
+
+`link-svc` owns the `link` database and the redirect hot path; `link-dispatcher` only appends
+clicks. They share the schema and the `link.clicked` contract, never code.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as Tenant (dashboard / backend)
+    participant V as Visitor
+    participant L as link-svc
+    participant R as Redis
+    participant DB as MySQL (link)
+    participant K as Kafka
+    participant LD as link-dispatcher
+
+    T->>L: POST /v1/links {long_url} (Bearer)
+    L->>R: INCR link:rl:tenant:<id> (fixed window)
+    L->>DB: find by (tenant_id, long_url_hash)
+    alt already shortened
+        L-->>T: 200 {code, short_url} (same mapping)
+    else new URL
+        L->>L: Snowflake id -> Base62 code
+        L->>DB: insert links
+        L->>R: SET link:<code> (warm cache, TTL 1h)
+        L-->>T: 201 {code, short_url}
+    end
+
+    V->>L: GET /<code> (public host)
+    L->>R: GET link:<code>
+    opt cache miss
+        L->>DB: find by code
+        L->>R: SET link:<code>
+    end
+    L-->>V: 302 Location: long_url
+    L-)K: publish link.clicked (background, best-effort)
+    K->>LD: consume
+    LD->>DB: insert link_clicks (ip_hash, never the raw IP)
+```
+
+Why it is built this way:
+
+- **Snowflake -> Base62, not an auto-increment.** A plain counter makes codes enumerable
+  (`code+1`) and leaks volume. A Snowflake id packs `[41 bits ms | 10 bits node | 12 bits seq]`, so
+  ids are unique without a DB round trip. Pitfall: every replica needs its own `LINK_NODE_ID`
+  (0..1023) or two pods can mint the same code; the setting is parsed strictly for that reason.
+- **302, not 301.** Browsers cache a 301 and stop calling the service, which silently ends click
+  tracking for that visitor.
+- **The redirect never waits on Kafka.** The click is published on a detached goroutine behind a
+  bounded semaphore (`LINK_MAX_INFLIGHT_CLICKS`); when the broker is slow, clicks are dropped
+  rather than piling up goroutines. Analytics is best-effort, the redirect is the product.
+- **Dedup needs a hash column.** `long_url` is `TEXT` and cannot carry a unique index, so
+  `(tenant_id, sha256(long_url))` is the dedup key. The check-then-insert race is settled by that
+  unique index: the loser re-reads and returns the winner's code.
+- **Clicks are at-least-once.** A redelivered `link.clicked` double-counts; that is accepted for
+  analytics. A poison message is logged and dropped so it cannot stall its partition.
+
+```mermaid
+erDiagram
+    links ||--o{ link_clicks : "code (denormalized, no FK)"
+
+    links {
+        bigint id PK "snowflake"
+        varchar code UK "base62(id)"
+        char tenant_id
+        text long_url
+        char long_url_hash "sha256, unique per tenant"
+        datetime created_at
+    }
+    link_clicks {
+        bigint id PK
+        varchar code
+        char tenant_id
+        datetime ts "UTC"
+        varchar referer
+        varchar ua
+        char ip_hash
+    }
+```
+
+---
+
+## 8. Notification Service (sub-project B)
+
+> **Status (2026-10-12):** code-complete against the
+> [notification system spec](superpowers/specs/2026-08-19-notification-system-design.md) and covered
+> by in-process tests. **Not run against real infrastructure yet** (compose, Traefik, CI images,
+> `test/e2e/notification_test.go`, SMTP), and there are no k8s manifests. Open items are listed in
+> the [roadmap](roadmap/2026-08-16-notification-platform-and-link-service.md).
+
+`notification-api` accepts and records a send; delivery happens in `otp-dispatcher`, which gains a
+second set of handlers that are **opt-in**: they start only when `NOTIFICATION_MYSQL_DSN` is set, so
+an OTP-only deployment is unchanged.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as Tenant
+    participant N as notification-api
+    participant R as Redis
+    participant DB as MySQL (notification)
+    participant K as Kafka
+    participant D as otp-dispatcher
+    participant P as Provider (SMTP / Resend / Twilio)
+
+    T->>N: POST /v1/notifications (Bearer, optional idempotency key)
+    N->>DB: load template (tenant, active, channel matches)
+    alt marketing and user opted out
+        N->>DB: insert notification_log (suppressed)
+        N-->>T: suppressed
+    else accepted
+        N->>R: per-tenant and per-user rate limits
+        N->>DB: insert notification_log (queued)
+        Note over N,DB: id derives from the idempotency key.<br/>A duplicate insert returns the first notification.
+        N->>K: publish notification.<channel>.requested
+        N-->>T: queued {notification_id}
+    end
+
+    K->>D: consume
+    D->>DB: load template, render (pkg/templating)
+    loop until sent, permanent error, or max attempts (backoff)
+        D->>P: deliver
+    end
+    alt delivered
+        D->>DB: queued -> sent (guarded)
+        D->>K: notification.sent
+    else failed
+        D->>DB: queued -> failed (guarded)
+        D->>K: notification.failed + notification.dlq
+    end
+```
+
+Why it is built this way:
+
+- **Idempotency is in the primary key.** `notification_log.id` is derived from
+  `(tenant, idempotency key)`, so a client retry hits a duplicate-key insert and gets the first
+  notification back instead of sending twice. Designing this in from the start is far cheaper than
+  bolting a dedup table on later.
+- **Guarded state transitions.** The dispatcher updates a row only from an allowed prior state
+  (`failed` only from `queued`; `sent` from `queued` or `failed`), so a redelivered Kafka message
+  cannot flip a `sent` row back to `failed`. `sent` may overwrite `failed` because notification-api
+  marks a row failed when its publish reports an error, and the message may still have gone out.
+- **Opt-out only applies to marketing.** Suppressing a transactional message (a receipt, a login
+  code) is a bug, so only `kind = marketing` consults `notification_settings`.
+- **Permanent vs transient errors.** A 5yz SMTP reply is a definitive rejection and fails
+  immediately; 4yz replies and network errors are retried with backoff. Retrying an unknown
+  mailbox `MaxAttempts` times only delays the DLQ entry.
+- **Rendered subjects are always one line.** The renderer collapses CR/LF in the subject, because a
+  tenant-supplied variable containing a line break would otherwise inject mail headers.
+- **Preview uses the delivery renderer.** `POST /v1/templates/:id/preview` calls the same
+  `pkg/templating` code path as the dispatcher, so a preview cannot diverge from what is sent.
+
+Pitfall still open: `{{link "url"}}` needs a shortener. `notification-api` currently wires a
+`noShortener`, so such a template fails with `templating.ErrNoShortener` until the link-svc adapter
+exists (blocked on how a service authenticates to link-svc on a tenant's behalf).
+
+```mermaid
+erDiagram
+    templates ||--o{ template_versions : "snapshots on update"
+    templates ||--o{ notification_log : "rendered from"
+    notification_log ||--o{ notification_events : "engagement"
+
+    templates {
+        char id PK
+        char tenant_id
+        varchar name
+        varchar channel "email | sms"
+        varchar locale
+        varchar subject
+        text body
+        int version "optimistic lock"
+        varchar status "active | archived"
+    }
+    template_versions {
+        char id PK
+        char template_id
+        int version
+        varchar subject
+        text body
+    }
+    notification_log {
+        char id PK "idempotency key"
+        char tenant_id
+        varchar channel
+        varchar recipient_masked
+        char template_id
+        varchar kind "transactional | marketing"
+        varchar state "queued | sent | failed | suppressed"
+        varchar provider
+        text error
+    }
+    notification_settings {
+        char tenant_id PK
+        varchar user_ref PK
+        varchar channel PK
+        boolean enabled
+    }
+    notification_events {
+        bigint id PK
+        char notification_id
+        varchar type "delivered | opened | clicked"
+        datetime ts
+    }
+```
+
+> These `templates` live in the **notification** database and are tenant-scoped. They are separate
+> from the OTP `templates` in section 5, which the dashboard's Templates screen still uses.
