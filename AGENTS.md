@@ -113,3 +113,20 @@ Put documentation under `docs/` (create it if missing), named clearly per featur
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs use GitHub Issues in DiiKhanh/worklane.
+Read `docs/agents/issue-tracker.md` before tracker operations.
+
+### Triage labels
+
+Use the five canonical triage labels.
+Read `docs/agents/triage-labels.md` before assigning triage labels.
+
+### Domain docs
+
+Single-context layout with a root glossary and shared ADR directory.
+Read `docs/agents/domain.md` before domain exploration or design work.
