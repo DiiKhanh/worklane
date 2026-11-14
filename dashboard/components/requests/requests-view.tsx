@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ListChecks, Search } from "lucide-react";
 import type { OtpRequest, OtpState } from "@/lib/api/types";
@@ -77,8 +77,22 @@ export function RequestsView() {
   const { data: logs } = useLogs();
   const { filters, setFilter } = useUIStore();
   const [openId, setOpenId] = useState<string | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLTableRowElement | null>(null);
+  const scrollTop = useRef(0);
   const activeState = filters.state ?? "all";
   const search = filters.search ?? "";
+
+  useLayoutEffect(() => {
+    const main = detailRef.current?.closest("main");
+    if (openId) {
+      detailRef.current?.querySelector("button")?.focus({ preventScroll: true });
+      if (main) main.scrollTop = 0;
+    } else if (triggerRef.current) {
+      triggerRef.current.focus({ preventScroll: true });
+      if (main) main.scrollTop = scrollTop.current;
+    }
+  }, [openId]);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -93,71 +107,78 @@ export function RequestsView() {
   const openRequest = openId
     ? data?.find((r) => r.id === openId)
     : undefined;
-  if (openRequest) {
-    return (
-      <RequestDetail
-        request={openRequest}
-        log={logs?.find((l) => l.requestId === openRequest.id)}
-        onBack={() => setOpenId(null)}
-      />
-    );
-  }
-
   return (
-    <div>
-      <SectionHeading
-        title="OTP requests"
-        description="Every code issued for your tenant. Recipients are masked at rest. Select a request for its lifecycle."
-      />
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-1.5">
-          {STATES.map((s) => {
-            const active = activeState === s;
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setFilter("state", s === "all" ? undefined : s)}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors",
-                  active
-                    ? "border-primary/40 bg-primary/12 text-foreground"
-                    : "border-border text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {s}
-              </button>
-            );
-          })}
-        </div>
-        <div className="relative sm:w-64">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setFilter("search", e.target.value || undefined)}
-            placeholder="Search recipient"
-            className="pl-8"
+    <>
+      <div ref={detailRef} hidden={!openRequest}>
+        {openRequest && (
+          <RequestDetail
+            request={openRequest}
+            log={logs?.find((l) => l.requestId === openRequest.id)}
+            onBack={() => setOpenId(null)}
           />
-        </div>
+        )}
       </div>
+      <div hidden={!!openRequest}>
+        <SectionHeading
+          title="OTP requests"
+          description="Every code issued for your tenant. Recipients are masked at rest. Select a request for its lifecycle."
+        />
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-1.5">
+            {STATES.map((s) => {
+              const active = activeState === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setFilter("state", s === "all" ? undefined : s)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors",
+                    active
+                      ? "border-primary/40 bg-primary/12 text-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+          <div className="relative sm:w-64">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Search recipient"
+              value={search}
+              onChange={(e) => setFilter("search", e.target.value || undefined)}
+              placeholder="Search recipient"
+              className="pl-8"
+            />
+          </div>
+        </div>
 
-      {isLoading || !data ? (
-        <Skeleton className="h-96 rounded-xl" />
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={ListChecks}
-          title="No matching requests"
-          description="Try a different state or search term."
-        />
-      ) : (
-        <DataTable
-          columns={columns}
-          data={filtered}
-          pageSize={12}
-          rowKey={(r) => r.id}
-          onRowClick={(r) => setOpenId(r.id)}
-        />
-      )}
-    </div>
+        {isLoading || !data ? (
+          <Skeleton className="h-96 rounded-xl" />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={ListChecks}
+            title="No matching requests"
+            description="Try a different state or search term."
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filtered}
+            pageSize={12}
+            rowKey={(r) => r.id}
+            onRowClick={(r, element) => {
+              triggerRef.current = element;
+              scrollTop.current = element.closest("main")?.scrollTop ?? 0;
+              setOpenId(r.id);
+            }}
+          />
+        )}
+      </div>
+    </>
   );
 }

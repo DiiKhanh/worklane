@@ -22,6 +22,7 @@ export function Playground() {
             <Button
               key={c}
               type="button"
+              aria-pressed={channel === c}
               size="sm"
               variant={channel === c ? "default" : "ghost"}
               onClick={() => {

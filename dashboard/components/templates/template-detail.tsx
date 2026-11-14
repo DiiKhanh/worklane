@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, LoaderCircle, Save } from "lucide-react";
 import type { Template, TemplateVersion } from "@/lib/api/types";
 import {
   useAddVersion,
@@ -17,14 +17,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { SectionHeading } from "@/components/common/section-heading";
 import { Panel } from "@/components/common/panel";
 import { StateBadge } from "@/components/common/state-badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Only variables wired end-to-end in the OTP flow. {{name}}/{{link}} arrive with later
 // sub-projects (B/C); the backend rejects any other token at author time.
 const TEMPLATE_VARS = ["{{code}}", "{{expiry}}"];
 
 export function TemplateDetail({ template, onBack }: { template: Template; onBack: () => void }) {
-  const { data } = useTemplate(template.id);
+  const { data, isLoading, isError, refetch } = useTemplate(template.id);
   const publish = usePublishVersion(template.id);
+  const [dirty, setDirty] = useState(false);
 
   const versions = data?.versions ?? [];
   const activeId = data?.template.activeVersionId ?? template.activeVersionId;
@@ -45,21 +47,49 @@ export function TemplateDetail({ template, onBack }: { template: Template; onBac
         <StateBadge state={template.status === "active" ? "active" : "expired"} />
       </div>
 
-      {/* Keyed by the seed version so switching the live version reseeds the editor. */}
-      <Editor key={seed?.id ?? "empty"} template={template} seed={seed} />
+      {isLoading ? (
+        <Skeleton className="h-80 rounded-xl" />
+      ) : isError && !data ? (
+        <div role="alert" className="flex items-center gap-3 py-4 text-sm text-destructive">
+          Could not load this template.
+          <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+        </div>
+      ) : (
+        <Editor
+          key={activeId || "draft"}
+          template={template}
+          seed={seed}
+          onDirtyChange={setDirty}
+          disabled={publish.isPending}
+        />
+      )}
 
       <div className="mt-4">
         <Panel
           title="Version history"
           description="Publish a version to make it live; publish an older one to roll back"
         >
+          <p role="status" className="mb-3 text-xs text-muted-foreground">
+            {publish.isPending
+              ? "Publishing version..."
+              : dirty
+                ? "Save the current changes before making a version live."
+                : publish.isSuccess
+                  ? "Version is live. New sends will use this version."
+                  : "Saved drafts do not affect delivery until made live."}
+          </p>
+          {publish.isError && (
+            <p role="alert" className="mb-3 text-sm text-destructive">
+              Could not publish this version. Try again.
+            </p>
+          )}
           <ul className="m-0 list-none p-0">
             {versions.map((v, i) => {
               const isActive = v.id === activeId;
               return (
                 <li key={v.id} className={`flex items-center gap-3 py-2.5 ${i ? "border-t border-border/70" : ""}`}>
                   <span className="w-7 shrink-0 font-mono text-[13px]">v{v.versionNo}</span>
-                  <span className="flex-1 text-sm">
+                  <span className="min-w-0 flex-1 break-words text-sm">
                     {v.note || "(no note)"}
                     <span className="block text-xs text-muted-foreground">
                       {v.createdBy} · {v.status}
@@ -68,8 +98,17 @@ export function TemplateDetail({ template, onBack }: { template: Template; onBac
                   {isActive ? (
                     <StateBadge state="active" />
                   ) : (
-                    <Button size="sm" variant="ghost" onClick={() => publish.mutate(v.id)} disabled={publish.isPending}>
-                      Make live
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label={`Make v${v.versionNo} live`}
+                      onClick={() => publish.mutate(v.id)}
+                      disabled={publish.isPending || dirty}
+                    >
+                      {publish.isPending && publish.variables === v.id && (
+                        <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
+                      )}
+                      {publish.isPending && publish.variables === v.id ? "Publishing..." : "Make live"}
                     </Button>
                   )}
                 </li>
@@ -82,34 +121,60 @@ export function TemplateDetail({ template, onBack }: { template: Template; onBac
   );
 }
 
-// Editor holds the draft-in-progress. It is keyed by the seed version, so React remounts
-// it (reseeding useState from props) whenever the live version changes - no seeding effect.
-function Editor({ template, seed }: { template: Template; seed?: TemplateVersion }) {
+// Publishing reseeds the editor; saving another draft keeps its content and feedback.
+function Editor({ template, seed, onDirtyChange, disabled }: {
+  template: Template;
+  seed?: TemplateVersion;
+  onDirtyChange: (dirty: boolean) => void;
+  disabled: boolean;
+}) {
   const addVersion = useAddVersion(template.id);
   const { mutate: runPreview } = usePreview();
 
   const [subject, setSubject] = useState(seed?.subject ?? "");
   const [body, setBody] = useState(seed?.body ?? "");
   const [note, setNote] = useState("");
-  const [rendered, setRendered] = useState({ subject: seed?.subject ?? "", body: seed?.body ?? "" });
+  const [saved, setSaved] = useState({ subject: seed?.subject ?? "", body: seed?.body ?? "" });
+  const [preview, setPreview] = useState<{
+    subject: string;
+    body: string;
+    rendered?: { subject: string; body: string };
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const dirty = subject !== saved.subject || body !== saved.body || !!note.trim();
+  const previewCurrent = preview?.subject === subject && preview?.body === body;
+  const rendered = previewCurrent ? preview.rendered : undefined;
+
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   // Live preview through the real render path (debounced), so it cannot diverge from what
   // the dispatcher sends. setState happens inside the mutation callback, not the effect body.
   useEffect(() => {
+    let current = true;
     const timer = setTimeout(() => {
       runPreview(
         { channel: template.channel, subject, body },
-        { onSuccess: setRendered, onError: () => setRendered({ subject, body }) },
+        {
+          onSuccess: (rendered) => {
+            if (current) setPreview({ subject, body, rendered });
+          },
+          onError: () => {
+            if (current) setPreview({ subject, body });
+          },
+        },
       );
     }, 250);
-    return () => clearTimeout(timer);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
   }, [subject, body, template.channel, runPreview]);
 
   async function saveDraft() {
     setError(null);
     try {
       await addVersion.mutateAsync({ subject, body, note: note.trim() });
+      setSaved({ subject, body });
       setNote("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save version");
@@ -118,17 +183,32 @@ function Editor({ template, seed }: { template: Template; seed?: TemplateVersion
 
   return (
     <>
-      <div className="mb-3 flex justify-end">
-        <Button size="sm" onClick={saveDraft} disabled={addVersion.isPending}>
-          <Save className="size-3.5" />
-          Save draft
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p role="status" className="text-xs text-muted-foreground">
+          {addVersion.isPending
+            ? "Saving draft..."
+            : dirty
+              ? "Unsaved changes"
+              : addVersion.isSuccess
+                ? `Draft v${addVersion.data.versionNo} saved`
+                : seed ? `Editing v${seed.versionNo}` : "New draft"}
+        </p>
+        <Button
+          size="sm"
+          onClick={saveDraft}
+          disabled={disabled || addVersion.isPending || !dirty || !body.trim() || (template.channel === "email" && !subject.trim())}
+        >
+          {addVersion.isPending
+            ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
+            : <Save className="size-3.5" />}
+          {addVersion.isPending ? "Saving..." : "Save draft"}
         </Button>
       </div>
-      {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="mb-3 text-sm text-destructive">{error}</p>}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Panel title="Editor" description="Variables resolve at render time">
-          <div className="grid gap-4">
+          <fieldset disabled={disabled || addVersion.isPending} className="grid min-w-0 gap-4">
             {template.channel === "email" && (
               <div className="grid gap-1.5">
                 <Label htmlFor="tpl-subject">Subject</Label>
@@ -166,18 +246,26 @@ function Editor({ template, seed }: { template: Template; seed?: TemplateVersion
                 onChange={(e) => setNote(e.target.value)}
               />
             </div>
-          </div>
+          </fieldset>
         </Panel>
 
         <Panel title="Preview" description="Rendered through the delivery path">
-          <div className="mt-1 grid gap-2.5 rounded-xl border border-border bg-muted/40 p-4">
+          <div aria-busy={!previewCurrent} className="mt-1 grid min-h-32 gap-2.5 rounded-xl border border-border bg-muted/40 p-4">
             <span className="w-fit text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               {template.channel}
             </span>
-            {template.channel === "email" && <div className="text-sm font-medium">{rendered.subject}</div>}
-            <div className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-              {rendered.body}
-            </div>
+            {!previewCurrent ? (
+              <p role="status" className="text-xs text-muted-foreground">Updating preview...</p>
+            ) : !rendered ? (
+              <p role="alert" className="text-sm text-destructive">Preview unavailable. Check the content or connection and edit to retry.</p>
+            ) : (
+              <>
+                {template.channel === "email" && <div className="break-words text-sm font-medium">{rendered.subject}</div>}
+                <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
+                  {rendered.body}
+                </div>
+              </>
+            )}
           </div>
         </Panel>
       </div>

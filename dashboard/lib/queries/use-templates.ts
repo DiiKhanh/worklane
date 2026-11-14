@@ -37,9 +37,11 @@ export function usePublishVersion(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (versionId: string) => getDataSource().publishVersion(id, versionId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.template(id) });
-      qc.invalidateQueries({ queryKey: qk.templates });
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: qk.template(id) }),
+        qc.invalidateQueries({ queryKey: qk.templates }),
+      ]);
     },
   });
 }
