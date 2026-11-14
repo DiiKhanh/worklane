@@ -5,6 +5,14 @@ description: Reverse-lookup glossary that turns a vague description of a web ani
 
 # Animation Vocabulary
 
+## Initial Response
+
+When this skill is first invoked without a specific question, respond only with:
+
+> I'm ready to put a name to any motion effect you describe, my knowledge comes from Emil Kowalski's animation philosophy.
+
+Do not provide any other information until the user asks a question.
+
 Turn a vague description of a motion or effect into the precise term, so the user knows what to ask for.
 
 ## Quick Start
@@ -54,8 +62,6 @@ Output:
 ```
 
 ## Glossary
-
-_A curated snapshot mirroring the project's `/vocabulary` page; keep the two in sync when either changes._
 
 ### Entrances & Exits — how elements appear and disappear
 - **Fade in / Fade out** — Element appears or disappears by changing opacity.
@@ -127,7 +133,7 @@ _A curated snapshot mirroring the project's `/vocabulary` page; keep the two in 
 - **Damping** — How quickly a spring settles. Lower damping means more bounce and oscillation.
 - **Mass** — How heavy the animated element feels. More mass makes it slower and more sluggish.
 - **Bounce** — A spring that overshoots and settles, adding playfulness.
-- **Perceptual duration** — How long a spring feels finished, even though it keeps micro-settling underneath.
+- **Perceptual duration** — How long a spring takes to look finished, even though it keeps micro-settling underneath.
 - **Momentum** — Motion that carries velocity, especially after a drag or interruption.
 - **Velocity** — How fast and in which direction an element is moving. A spring carries it into the next animation when interrupted, so a flicked element keeps its speed.
 - **Interruptible animation** — An animation that can be smoothly redirected mid-flight instead of finishing first.
@@ -159,7 +165,7 @@ _A curated snapshot mirroring the project's `/vocabulary` page; keep the two in 
 - **Dropped frame** — A frame the browser missed its deadline to draw, causing a tiny hitch in motion.
 - **Compositing** — Letting the GPU move or fade an element on its own layer without redoing layout or paint.
 - **will-change** — A CSS hint that an element is about to animate, so the browser can promote it to its own layer ahead of time.
-- **Layout thrashing** — Animating properties like width, height, top, or left that force the browser to recalculate layout every frame, causing jank.
+- **Layout thrashing** — Reading layout (`offsetHeight`, `getBoundingClientRect`) right after writing styles, repeatedly, forcing the browser to recalculate layout synchronously each time.
 
 ### Principles to Know — concepts that guide when and how to animate
 - **Purposeful animation** — Motion should serve a function — orient, give feedback, show relationships — not just decorate.
