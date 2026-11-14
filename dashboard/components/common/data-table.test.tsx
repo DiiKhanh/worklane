@@ -20,12 +20,24 @@ describe("DataTable onRowClick", () => {
       />,
     );
     await userEvent.click(screen.getByText("Alpha"));
-    expect(onRowClick).toHaveBeenCalledWith(data[0]);
+    expect(onRowClick).toHaveBeenCalledWith(data[0], screen.getByText("Alpha").closest("tr"));
   });
 
   it("does not make the data row clickable when onRowClick is absent", () => {
     render(<DataTable columns={columns} data={data} rowKey={(r) => r.id} />);
     const row = screen.getByText("Alpha").closest("tr");
     expect(row?.getAttribute("role")).toBeNull();
+  });
+
+  it("keeps nested button activation separate from row navigation", async () => {
+    const onRowClick = vi.fn();
+    const onAction = vi.fn();
+    render(<DataTable columns={[{ id: "action", cell: () => <button onClick={onAction}>Copy</button> }]} data={data} onRowClick={onRowClick} />);
+    const user = userEvent.setup();
+    const button = screen.getByText("Copy", { selector: "button" });
+    await user.click(button);
+    await user.keyboard("{Enter}");
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onRowClick).not.toHaveBeenCalled();
   });
 });

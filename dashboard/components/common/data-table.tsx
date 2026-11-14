@@ -30,8 +30,8 @@ type DataTableProps<TData, TValue> = {
   rowKey?: (row: TData) => string;
   /** Optional per-row class, e.g. to highlight a freshly-arrived row. */
   rowClassName?: (row: TData) => string | undefined;
-  /** When set, rows become clickable (Enter/Space too) and gain a trailing chevron. */
-  onRowClick?: (row: TData) => void;
+  /** Activates a row and supplies its element for restoring focus after navigation. */
+  onRowClick?: (row: TData, element: HTMLTableRowElement) => void;
 };
 
 export function DataTable<TData, TValue>({
@@ -125,14 +125,19 @@ export function DataTable<TData, TValue>({
                   role={onRowClick ? "button" : undefined}
                   tabIndex={onRowClick ? 0 : undefined}
                   onClick={
-                    onRowClick ? () => onRowClick(row.original) : undefined
+                    onRowClick
+                      ? (e) => {
+                          if (e.target instanceof Element && e.target.closest("button, a, input, select, textarea")) return;
+                          onRowClick(row.original, e.currentTarget);
+                        }
+                      : undefined
                   }
                   onKeyDown={
                     onRowClick
                       ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
+                          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
                             e.preventDefault();
-                            onRowClick(row.original);
+                            onRowClick(row.original, e.currentTarget);
                           }
                         }
                       : undefined
@@ -140,7 +145,7 @@ export function DataTable<TData, TValue>({
                   className={cn(
                     "group/row border-border/70",
                     onRowClick &&
-                      "cursor-pointer outline-none hover:bg-muted/50 focus-visible:bg-muted/50",
+                      "cursor-pointer outline-none hover:bg-muted/50 focus-visible:bg-muted/50 active:transform-none active:bg-muted/70",
                     rowClassName?.(row.original),
                   )}
                 >
