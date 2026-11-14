@@ -12,13 +12,15 @@ No outage remediation was applied or is proposed from this snapshot.
 
 The running backend uses `sha-041efd7`, before Template Studio. Its missing
 template route is confirmed externally. The dashboard's public build is
-identified below; its exact source-commit association awaits confirmation of
-the Vercel production alias. **Issue #4 remains incomplete pending that mapping.**
-Production Template Studio verification cannot proceed on the current backend.
+identified below, and the Vercel owner confirmed Production source `main` at
+`280fd11`. **The verification criteria for issue #4 are satisfied.** Production
+Template Studio verification cannot proceed on the current backend.
 
 ## Environment and boundaries
 
-- Observation window: 2026-11-14 17:03:42-17:05:35 UTC.
+- Operational observation window: 2026-11-14 17:03:42-17:05:35 UTC.
+- Vercel source confirmation: owner-provided evidence in the implementation
+  session, recorded at 2026-11-14 17:09:33 UTC after the operational inspection.
 - API: `https://api-otp.dikhanh.io.vn` through Cloudflare Tunnel and Traefik.
 - Dashboard: `https://worklane-six.vercel.app` on Vercel.
 - Cluster: node `dk`, namespace `worklane`; inspected with the existing user
@@ -109,9 +111,13 @@ reports source `280fd11d38f30c8f9ca5bd6e0b821a1e84311702` and success at
 `https://worklane-2hnqquoft-diikhanhs-projects.vercel.app`.
 That URL redirected to Vercel login, so its artifact could not be compared with
 the public alias. The record identifies a successful deployment, but does not
-prove the current alias points to it. Owner confirmation of the Production
-Current deployment's Source SHA and URL is pending. Authentication redirects
-and their transient parameters are omitted.
+prove the current alias points to it. In response to the request to inspect
+Vercel's Current Production deployment, the project owner supplied Source
+`main`, commit `280fd11`, title `docs(dashboard): clarify setup and playground feedback`.
+This establishes the dashboard source through owner-provided evidence matching
+the GitHub deployment record, rather than an independently authenticated Vercel
+API inspection. The deployment URL above comes from GitHub, not an owner-supplied
+URL. Authentication redirects and their transient parameters are omitted.
 
 The verification milestone requires Template Studio backend functionality merged
 in [PR #2](https://github.com/DiiKhanh/worklane/pull/2), merge commit
@@ -162,5 +168,7 @@ verify the older production backend or this documentation change.
 - Outage remediation and post-remediation checks: not needed for the observed
   reachable API; no production change was applied.
 - Backend artifacts and revision mismatch: identified; Template Studio unavailable.
-- Dashboard public artifact: identified; exact source mapping pending owner
-  confirmation. Keep #4 incomplete until that evidence is recorded.
+- Dashboard public artifact: identified; Source `main` at `280fd11` confirmed
+  by the Vercel owner and matched to the GitHub deployment record.
+- Issue #4 verification complete. The GitHub issue was not edited or closed;
+  tracker publication was not authorized by this implementation request.
