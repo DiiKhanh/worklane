@@ -7,9 +7,12 @@
 [notification-platform + link-service roadmap](../../roadmap/2026-08-16-notification-platform-and-link-service.md);
 integrates with **C** ([link-svc](./2026-08-19-link-service-url-shortener-design.md)) for `{{link}}`.
 
-> **HARD GATE.** The roadmap gates A/B/C behind "OTP email + SMS live in production, stable".
-> OTP is not yet in production (k3s deploy Part B pending). This spec is prepared ahead of the
-> gate for design/learning; **do not build-and-ship until the gate opens.**
+> **Current gate (2026-11-15).** The
+> [milestone assessment](../../roadmap/2026-11-15-issue-10-milestone-readiness.md)
+> supersedes the original email-plus-SMS gate. Production email OTP and Template
+> Studio have verification evidence. Twilio test credentials establish integration
+> only; SMS and phone verification remain deferred. Backup/restore is separately
+> deferred, not proven. Further product work requires a separate scope decision.
 
 ## 1. Goal
 

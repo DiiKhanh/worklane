@@ -1,9 +1,12 @@
 # SMS smoke runbook - Twilio Test Credentials
 
-Status: **DONE** - a production smoke on 2026-08-29 created a `provider=twilio,status=sent` delivery
-log, proving the SMS path end-to-end in prod. OTP email + SMS are now both live and stable, which
-clears the hard gate on the [notification platform + link service roadmap](../roadmap/2026-08-16-notification-platform-and-link-service.md).
-Keep this runbook for re-running the smoke after credential or config changes.
+Status: **Historical integration evidence only.** A production smoke on 2026-08-29
+created a `provider=twilio,status=sent` delivery log using Twilio test credentials.
+This establishes the simulated provider integration, not real handset delivery,
+phone-number verification or SMS stability. SMS and phone-number-dependent
+verification remain deferred under the current
+[milestone assessment](../roadmap/2026-11-15-issue-10-milestone-readiness.md).
+This historical procedure does not authorize production sends or credential changes.
 
 Use this when the goal is an internal production smoke test of the SMS path without sending a real
 SMS and without spending money. Twilio test credentials call the real Twilio API endpoint, validate
@@ -92,8 +95,8 @@ status=sent
 The normal `/v1/otp/verify` step cannot be completed from a received SMS because no SMS is delivered.
 Production also does not store plaintext OTP codes, only hashes. If you need to prove the full
 send-and-verify loop for SMS, use a real Twilio trial/live setup with a real sender number and a
-verified recipient, or temporarily capture the code from the `otp.requested` Kafka message during the
-smoke window.
+verified recipient under a separately approved verification scope. Capturing a
+code from Kafka does not establish handset receipt or phone-number ownership.
 
 ## Returning to real SMS later
 

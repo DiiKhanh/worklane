@@ -2,7 +2,10 @@
 
 **Status:** Approved 2026-08-29. First sub-project of the
 [notification platform + link service roadmap](../../roadmap/2026-08-16-notification-platform-and-link-service.md)
-(gate cleared 2026-08-29: OTP email + SMS both live in prod).
+(historical SMS evidence used Twilio test credentials and proves integration
+only; real SMS and phone verification remain deferred). Current verification and
+Link Service readiness are recorded in the
+[milestone assessment](../../roadmap/2026-11-15-issue-10-milestone-readiness.md).
 
 **Next step:** implementation plan (writing-plans).
 

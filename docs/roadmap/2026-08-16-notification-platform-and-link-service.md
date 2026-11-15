@@ -1,8 +1,13 @@
 # Roadmap: Notification Platform + Link Service (future feature)
 
-**Status:** Active - gate cleared 2026-08-29; starting with sub-project **A (Template Studio)**.
-**Hard gate:** ~~Start only after OTP email + SMS are live in production and stable.~~
-**CLEARED 2026-08-29** - OTP email (Resend) and SMS (Twilio) both proven live in prod.
+**Status:** Template Studio production verification complete; Link Service awaits
+a separate owner decision after the
+[milestone assessment](2026-11-15-issue-10-milestone-readiness.md).
+**Current gate:** Verify the existing email OTP platform before Link Service.
+SMS and phone-number verification are deferred. The 2026-08-29 Twilio
+test-credential smoke established integration only, not real SMS delivery or
+stability. Backup/restore was separately deferred by owner decision on 2026-11-15;
+it has not passed verification. The assessment records evidence and residual gaps.
 **Noted:** 2026-08-16.
 **References the author wants to learn from:**
 - Notification System - system-design-notes 10
@@ -94,7 +99,10 @@ A new, self-contained bounded context `link-svc`.
 
 ## 6. Suggested order & gates
 
-0. **GATE:** OTP email + SMS in production, stable. **CLEARED 2026-08-29.**
+0. **GATE:** Review the current email OTP milestone assessment and explicitly
+   decide whether to resume Link Service. SMS/phone verification and backup/restore
+   are deferred, not verified; the historical simulated SMS smoke does not clear
+   this gate.
 1. **A - Template Studio** (small, high UI value; unblocks the rest). **SHIPPED 2026-08-29** -
    design `docs/superpowers/specs/2026-08-29-template-studio-design.md`, plan
    `docs/superpowers/plans/2026-08-29-template-studio.md`.
