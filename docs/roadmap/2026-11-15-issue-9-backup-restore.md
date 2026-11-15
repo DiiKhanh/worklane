@@ -100,8 +100,10 @@ Retain failed artifacts for inspection; do not automatically remove anything.
 
    The generated password remains inside the isolated Pod; it is never printed.
    MySQL listens only on its Unix socket. No production credentials or Secret
-   objects are mounted in the restore Pod. Allow up to 180 seconds for an
-   authenticated `SELECT 1` through `kubectl exec`; stop if readiness fails.
+   objects are mounted in the restore Pod. Allow up to 180 seconds for both
+   `/proc/1/comm` to report `mysqld` and an authenticated `SELECT 1` through
+   `kubectl exec`; stop if readiness fails. Checking PID 1 excludes the temporary
+   initialization server, which can answer queries before initialization ends.
 5. Stream `source.sql` to the isolated Pod only:
 
    ```sh
