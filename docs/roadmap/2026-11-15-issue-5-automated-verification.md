@@ -11,17 +11,21 @@ Existing automated tests demonstrated recipient/tenant rate limits, resend
 cooldown and verification-attempt locking. The reported local-storage warning
 did not reproduce with Node 22.23.5.
 
-The latest completed CI run for the selected revision passed, including the
-isolated full-stack email E2E. A **new full-stack execution during this session
-remains blocked** because this host has no Docker executable. Existing CI
-evidence is recorded separately and does not represent a new local E2E run.
-Issue #5 remains incomplete pending that execution or an explicit decision to
-accept the existing CI execution for the same revision.
+**Issue #5 verification is complete.** New isolated GitHub-hosted
+[run 43708589190](https://github.com/DiiKhanh/worklane/actions/runs/43708589190)
+passed backend, dashboard and full-stack email E2E checks for
+`7965ac306a5befcac686bb88f80d1ada1bca33bd` on 2026-11-15, after fixing the
+clean-checkout typechecking failure described below. No production mutation,
+real notification or image publication was needed.
 
 ## Revision, environment and boundaries
 
-- Selected source revision: `9bff3eac88d68bd8f0f5564f53232235675a161e` on `main`.
-- Local observation window: 2026-11-15 11:00-11:07 UTC.
+- Initial source revision: `9bff3eac88d68bd8f0f5564f53232235675a161e` on `main`.
+- Final verified revision: `7965ac306a5befcac686bb88f80d1ada1bca33bd`, published
+  on `verification/issue-5`; no push or merge to `main` was performed.
+- Initial local observation window: 2026-11-15 11:00-11:07 UTC.
+- Final CI execution: 2026-11-15 11:22:09-11:25:01 UTC on disposable GitHub-hosted
+  Ubuntu 26.04.1 runners (`ubuntu-26.04` image).
 - Host: Ubuntu 20.04.6 LTS, Linux x86_64; the same host also runs production.
   Local checks used in-process test fixtures, temporary SQLite databases and
   simulated external providers. No production database or API was targeted.
@@ -29,24 +33,26 @@ accept the existing CI execution for the same revision.
   Node 22.23.5, pnpm 10.26.2. Go, Make and Zig were unpacked into temporary
   user-owned directories; Node was already available outside PATH. No system
   installation, daemon, credential or access-control change was made.
-- Dependencies: the existing Go module and dashboard lockfile. Local checks did
-  not change source, tests, dependency manifests or lockfiles.
+- Dependencies: the existing Go module and dashboard lockfile. Only the existing
+  dashboard typecheck command changed; no dependencies or lockfiles changed.
 - The implementation-session decision was to run **only existing tests**.
-  No new tests or application fixes were introduced. TDD additions therefore
-  do not apply to this documentation-only change.
-- No real notifications, production mutations, deployments, spending or
-  external publication were performed. No CI rerun was requested. SMS delivery
-  to a handset remains deferred; existing SMS unit tests were still executed.
+  No new tests were introduced. The clean-runner execution of the existing
+  typecheck command provides regression verification for the blocking fix.
+- No real notifications, production mutations, production deployments, spending or image
+  publication were performed. Branch publication and evidence publication were
+  specifically approved by the owner. SMS delivery to a handset remains
+  deferred; existing SMS unit tests were still executed.
 - Local checks did not need a real account or mailbox. The existing CI smoke
   test seeds a separate random tenant/API key in its disposable identity DB
   and delivers to MailHog through SMTP. No real provider is used for that flow.
   No credentials, OTP values or sensitive payloads are recorded here.
 
-The report commit changes documentation only. The revision above identifies
-the exact application and test source checked, rather than implying that a
-future report commit has already run in CI.
+The final evidence commit changes documentation only. Its `[skip ci]` marker
+avoids repeating unchanged checks merely to publish their results. The final
+verified revision identifies the exact application, tests and workflow checked;
+no passing-CI claim is made for the documentation commit itself.
 
-## CI evidence
+## Historical CI evidence
 
 GitHub run metadata and the smoke-job logs were read on 2026-11-15. Both runs
 below report `completed/success` for `test`, `smoke` and all four image-build
@@ -56,14 +62,14 @@ jobs. The authoritative workflow is
 | Run | Commit | UTC execution window | Result |
 | --- | --- | --- | --- |
 | [41648898724](https://github.com/DiiKhanh/worklane/actions/runs/41648898724) | `7bac0d1a3434dafb1356369abde20ff27e8fdbe4` | 2026-11-03 13:56:42-14:01:20 | Success; only run returned for the original review date |
-| [43619736197](https://github.com/DiiKhanh/worklane/actions/runs/43619736197) | `9bff3eac88d68bd8f0f5564f53232235675a161e` | 2026-11-14 17:11:20-17:15:30 | Success; latest run at inspection, exact selected revision |
+| [43619736197](https://github.com/DiiKhanh/worklane/actions/runs/43619736197) | `9bff3eac88d68bd8f0f5564f53232235675a161e` | 2026-11-14 17:11:20-17:15:30 | Success; latest run at initial inspection, exact initial revision |
 
 The original review file referenced by #3 is not tracked in this checkout.
 Issue #3 supplies the review date but no run ID. Run 41648898724 is the matching
 date candidate; the exact historical association cannot be proved from that
 snapshot alone. Its final result is now confirmed, rather than left pending.
 
-The selected revision's
+The initial revision's
 [backend test job](https://github.com/DiiKhanh/worklane/actions/runs/43619736197/job/132522457340)
 ran `go test ./...` successfully. Its
 [smoke job](https://github.com/DiiKhanh/worklane/actions/runs/43619736197/job/132522457924)
@@ -77,11 +83,12 @@ The existing [E2E tests](../../test/e2e/e2e_test.go) assert send acceptance,
 email capture in MailHog, rejection of a wrong code, acceptance of the delivered
 code, and rejection without an API key. This is full-stack backend email
 evidence through Traefik, not a browser/dashboard E2E or production result.
-The workflow contains no dashboard check job; dashboard results below are local.
+The historical image workflow contains no dashboard check job. Dashboard
+evidence comes from the initial local checks and the final verification run.
 
-## Local checks
+## Initial local checks
 
-All commands used the selected revision, with the toolchain on PATH. Backend
+All commands used the initial revision, with the toolchain on PATH. Backend
 CGO checks used `CGO_ENABLED=1` and `CC='zig cc'`; `make test` and `go vet`
 used `GOMAXPROCS=2`. No production environment file was loaded.
 
@@ -142,7 +149,7 @@ There is no demonstrated reliability failure in this environment. That does
 not establish the historical warning's cause or behavior under another Node
 runtime. No warnings were suppressed and no test-setup change was made.
 
-## Remaining blocker and completion status
+## Initial environment blocker (resolved through GitHub CI)
 
 `docker version` could not start (`docker: command not found`). No isolated
 Docker target was supplied for a new stack. The default Compose gateway uses
@@ -152,8 +159,8 @@ request was sent to this host's default API or database ports.
 
 The existing CI workflow publishes container images after successful test and
 smoke jobs. Rerunning it was not used as a workaround because external
-publication requires specific approval. A new execution needs an existing
-isolated Docker environment, or approval for a concrete alternative. The
+publication requires specific approval. The owner subsequently approved the
+isolated verification branch and workflow described below. The
 existing [E2E instructions](../../test/e2e/README.md) and workflow define the
 test; execution must keep SMTP/MailHog, a separate test tenant and disposable
 databases, and avoid production ports and provider credentials.
@@ -164,10 +171,11 @@ databases, and avoid production ports and provider credentials.
 - Rate limits and attempt locking: demonstrated by existing automated tests,
   with infrastructure/concurrency limitations stated.
 - Local-storage warning: not reproduced; no reliability failure demonstrated.
-- Blocking application failures requiring fixes: none reproduced.
-- New isolated full-stack email E2E: blocked; existing same-revision CI success
-  recorded separately. Final ticket sign-off remains pending.
-- No GitHub issue edits, closure, pushes or PR publication were performed.
+- Initial local checks reproduced no blocking failure; the subsequent clean CI
+  run exposed the typecheck failure fixed below.
+- New isolated full-stack email E2E: subsequently passed in run 43708589190.
+- Only the verification branch and ticket evidence were approved for external
+  publication. No PR or main-branch change was required.
 
 ## Follow-up: isolated GitHub verification
 
@@ -212,4 +220,41 @@ The package's existing `typecheck` script now runs that sequence. Repeating
 `pnpm typecheck` in the same initially failing clean archive passed after only
 that script changed. No generated file was edited or committed, no dependency
 changed, and no new test was added. The existing clean-runner typecheck step
-provides the regression check. Final CI evidence is pending a run of the fix.
+provides the regression check. The fix was committed as
+`7965ac306a5befcac686bb88f80d1ada1bca33bd`, and all checks were refreshed for it.
+
+## Final isolated execution and sign-off
+
+[Run 43708589190](https://github.com/DiiKhanh/worklane/actions/runs/43708589190)
+reports `completed/success` for final verified revision
+`7965ac306a5befcac686bb88f80d1ada1bca33bd`. All times below are UTC on 2026-11-15.
+
+| Job | Execution window | Result |
+| --- | --- | --- |
+| [backend](https://github.com/DiiKhanh/worklane/actions/runs/43708589190/job/132794990863) | 11:22:11-11:22:35 | Build, vet, five named protection tests and `make test` passed, including existing SMS unit tests |
+| [dashboard](https://github.com/DiiKhanh/worklane/actions/runs/43708589190/job/132794990918) | 11:22:11-11:23:18 | Frozen-lockfile install, clean typecheck, lint, 26 test files / 67 tests and production build passed |
+| [email-e2e](https://github.com/DiiKhanh/worklane/actions/runs/43708589190/job/132794990652) | 11:22:11-11:25:00 | Compose stack built and started, readiness passed, both existing email E2E tests passed, disposable stack teardown passed |
+
+`TestE2E_SendReceiveVerify` passed in 2.04s and `TestE2E_NoKeyRejected` passed
+in 0.00s. The E2E package reported `ok` (2.041s) at 11:24:56 UTC. Requests went
+through the runner's Traefik gateway to its own services, with a fresh random
+tenant/API key seeded in its identity database. The email was delivered to
+MailHog through SMTP; no real mailbox or SMS provider was contacted.
+
+The dashboard job used Node 22.23.5 and pnpm 10.26.2. The local-storage warning
+did not occur in this clean CI environment either. Logs did contain upstream
+Node/action deprecation warnings and pnpm's notice about the ignored esbuild
+install script. Those were not suppressed: the complete test suite and build
+still passed. No reliability failure from those notices was demonstrated.
+
+The earlier new run 43708361471 remains recorded as a failure: its backend and
+email E2E jobs passed, but its dashboard typecheck failed. The successful final
+run validates the subsequent fix rather than relabeling or hiding that failure.
+
+Final review of the complete change reported zero Standards findings and zero
+Spec defects. The former pending execution requirement is now satisfied by
+the final run above. All selected acceptance criteria for #5 are satisfied;
+the exact original-review/run association remains uncertain as recorded in
+the historical evidence. No claim is made about production email, Template
+Studio E2E, real SMS delivery, concurrent protection behavior or tagged
+infrastructure integration tests beyond the existing email E2E execution.
