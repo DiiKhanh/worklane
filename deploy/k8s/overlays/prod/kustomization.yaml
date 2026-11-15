@@ -12,10 +12,12 @@ images:
   newTag: sha-041efd7
 - name: otp-api
   newName: ghcr.io/diikhanh/worklane-otp-api
-  newTag: sha-041efd7
+  newTag: sha-14f2158
+  digest: sha256:ad82c126d47c6bd868693ee05e218c7b77de1744ac9b514c2398dfa8ba3aa41c
 - name: otp-dispatcher
   newName: ghcr.io/diikhanh/worklane-otp-dispatcher
-  newTag: sha-041efd7
+  newTag: sha-14f2158
+  digest: sha256:649e76b435c00c61dcd40ca7b1d097bf24f362f647f0dfed1c1c681d44ed8f15
 - name: seed
   newName: ghcr.io/diikhanh/worklane-seed
   newTag: sha-041efd7

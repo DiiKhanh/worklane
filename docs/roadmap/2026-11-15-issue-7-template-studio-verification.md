@@ -5,7 +5,16 @@ Source: [issue #7](https://github.com/DiiKhanh/worklane/issues/7), part of
 Prerequisite [#6](https://github.com/DiiKhanh/worklane/issues/6) was closed at
 inspection.
 
-## Result
+## Latest status
+
+The operator subsequently approved upgrading the backend. The
+[production upgrade](2026-11-15-issue-7-backend-upgrade.md) completed at
+12:47 UTC with both OTP services on `14f2158`, schema version 4 clean, and the
+template route returning HTTP 401 rather than 404. The deployment blocker below
+is historical. Issue #7 remains incomplete pending dashboard verification,
+test-content approval, mailbox receipt and restoration evidence.
+
+## Initial result (12:39 UTC)
 
 **Issue #7 is incomplete and blocked by the deployed backend.** At
 2026-11-15 12:39:05 UTC, the public API returned HTTP 404 and plain text
