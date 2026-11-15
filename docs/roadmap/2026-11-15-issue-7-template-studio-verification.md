@@ -7,12 +7,13 @@ inspection.
 
 ## Latest status
 
-The operator subsequently approved upgrading the backend. The
-[production upgrade](2026-11-15-issue-7-backend-upgrade.md) completed at
-12:47 UTC with both OTP services on `14f2158`, schema version 4 clean, and the
-template route returning HTTP 401 rather than 404. The deployment blocker below
-is historical. Issue #7 remains incomplete pending dashboard verification,
-test-content approval, mailbox receipt and restoration evidence.
+**Issue #7 verification is complete.** After the approved
+[production upgrade](2026-11-15-issue-7-backend-upgrade.md), the approved dashboard
+edit, preview, publication and v1 restoration were exercised. The operator
+confirmed both the received test content and received restored original content.
+See [execution evidence](2026-11-15-issue-7-received-email-verification.md), including
+the separately approved retry after HTTP 429. The blocker and incomplete
+acceptance status below describe the initial 12:39 UTC inspection only.
 
 ## Initial result (12:39 UTC)
 
@@ -151,7 +152,7 @@ file was loaded.
 Tagged integration and full-stack E2E suites were not rerun. The focused UI tests
 use simulated API behavior and do not prove production publishing or receipt.
 
-## Acceptance status
+## Initial acceptance status (12:39 UTC)
 
 - Template/locale, active-version and potential-user inventory: incomplete.
 - Exact content, affected scope and restoration approval: pending inventory and
