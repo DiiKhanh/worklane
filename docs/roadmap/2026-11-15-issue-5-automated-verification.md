@@ -168,3 +168,27 @@ databases, and avoid production ports and provider credentials.
 - New isolated full-stack email E2E: blocked; existing same-revision CI success
   recorded separately. Final ticket sign-off remains pending.
 - No GitHub issue edits, closure, pushes or PR publication were performed.
+
+## Follow-up: isolated GitHub verification
+
+The implementation session subsequently selected GitHub-hosted CI for a new
+execution. The existing image workflow cannot rerun its smoke job without
+also rerunning dependent image-publication jobs. A separate
+[verification workflow](../../.github/workflows/verification.yml) therefore
+runs the existing backend, dashboard and email E2E checks without registry
+publication or deployment steps. Its token has only `contents: read`.
+
+The workflow runs on pushes to `verification/issue-5` and supports manual
+dispatch once registered on the default branch. The email job uses an isolated
+GitHub-hosted Ubuntu runner, SMTP/MailHog, a fresh Compose database and test
+tenant, and throwaway JWT keys. It tears down the disposable stack after the
+test. The dashboard uses Node 22.23.5, the declared pnpm version and the frozen
+lockfile. Existing test files and the main-branch image workflow are unchanged.
+
+Local workflow validation with actionlint 1.7.12 passed. The focused OTP
+protection tests also passed again. Publication and execution are pending
+specific approval to push the prepared commit to the new remote branch
+`verification/issue-5` in `DiiKhanh/worklane`. No push to `main` is needed.
+Existing repository integrations may independently create a Vercel Preview
+for a new branch; this workflow itself contains no deployment step. The E2E
+completion status above remains pending until a successful run is recorded.

@@ -1,0 +1,112 @@
+name: verification
+
+on:
+  push:
+    branches: [verification/issue-5]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - name: Record revision and time
+        run: |
+          git rev-parse HEAD
+          date -u '+%Y-%m-%dT%H:%M:%SZ'
+      - run: go build ./...
+      - run: go vet ./...
+      - name: Verify OTP protections
+        run: >-
+          go test ./services/otp-api/internal/app
+          -run 'TestVerify_WrongCode_LocksAfterMax|TestSend_RateLimited|TestRateLimiter'
+          -count=1 -v
+      - run: make test
+
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dashboard
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_DATA_SOURCE: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.5"
+      - name: Record revision and time
+        run: |
+          git rev-parse HEAD
+          date -u '+%Y-%m-%dT%H:%M:%SZ'
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+  email-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EMAIL_PROVIDER: smtp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - name: Record revision and time
+        run: |
+          git rev-parse HEAD
+          date -u '+%Y-%m-%dT%H:%M:%SZ'
+      - name: Generate throwaway JWT keypair
+        run: |
+          mkdir -p deploy/compose/secrets
+          openssl genpkey -algorithm ed25519 -out deploy/compose/secrets/auth_priv.pem
+          openssl pkey -in deploy/compose/secrets/auth_priv.pem -pubout -out deploy/compose/secrets/auth_pub.pem
+      - name: Bring up the email stack
+        working-directory: deploy/compose
+        run: >-
+          docker compose up -d --build
+          mysql redis redpanda mailhog auth-svc otp-api otp-dispatcher traefik
+      - name: Wait for schema and API readiness
+        run: |
+          # A 401 proves routing and the migrated identity DB are available.
+          for i in $(seq 1 60); do
+            login=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+              -X POST http://localhost/auth/login -H 'Content-Type: application/json' \
+              -d '{"email":"x@y.co","password":"z"}' || true)
+            send=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+              -X POST http://localhost/v1/otp/send -d '{}' || true)
+            echo "attempt $i: auth-login=$login otp-send=$send"
+            if [ "$login" = "401" ] && [ "$send" = "401" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'Email stack did not become ready'
+          exit 1
+      - name: Run existing email E2E tests
+        env:
+          E2E_API_BASE: http://localhost
+          E2E_MAILHOG: http://localhost:8025
+          MYSQL_DSN: "root:secret@tcp(localhost:3306)/identity?parseTime=true&multiStatements=true"
+        run: go test -tags=e2e ./test/e2e/... -count=1 -v
+      - name: Show service status on failure
+        if: failure()
+        working-directory: deploy/compose
+        run: docker compose ps --all
+      - name: Tear down disposable stack
+        if: always()
+        working-directory: deploy/compose
+        run: docker compose down -v
