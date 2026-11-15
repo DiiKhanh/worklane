@@ -1,9 +1,16 @@
 # Roadmap: Notification Platform + Link Service (future feature)
 
-**Status:** Template Studio production verification complete; Link Service awaits
-a separate owner decision after the
+**Status:** Template Studio production verification complete; the owner resumed
+Link Service design after the
 [milestone assessment](2026-11-15-issue-10-milestone-readiness.md).
-**Current gate:** Verify the existing email OTP platform before Link Service.
+The owner confirmed the [consolidated MVP scope](2026-11-15-link-service-mvp-scope.md)
+before the [ticket breakdown](2026-11-15-link-service-ticket-drafts.md).
+GitHub spec/ticket publication and its documentation commit are separately
+authorized. The specification is published as
+[#11](https://github.com/DiiKhanh/worklane/issues/11), with six implementation
+sub-issues. Code implementation and production rollout remain separate.
+**Gate evidence:** The revised email OTP milestone was verified before resuming
+Link Service design; the assessment records its scope and limitations.
 SMS and phone-number verification are deferred. The 2026-08-29 Twilio
 test-credential smoke established integration only, not real SMS delivery or
 stability. Backup/restore was separately deferred by owner decision on 2026-11-15;
@@ -99,10 +106,10 @@ A new, self-contained bounded context `link-svc`.
 
 ## 6. Suggested order & gates
 
-0. **GATE:** Review the current email OTP milestone assessment and explicitly
-   decide whether to resume Link Service. SMS/phone verification and backup/restore
-   are deferred, not verified; the historical simulated SMS smoke does not clear
-   this gate.
+0. **GATE:** Link Service design resumed by owner decision on 2026-11-15;
+   consolidated MVP scope confirmed before ticket breakdown. SMS/phone
+   verification and backup/restore are deferred, not verified. Historical
+   simulated SMS evidence does not establish real delivery.
 1. **A - Template Studio** (small, high UI value; unblocks the rest). **SHIPPED 2026-08-29** -
    design `docs/superpowers/specs/2026-08-29-template-studio-design.md`, plan
    `docs/superpowers/plans/2026-08-29-template-studio.md`.

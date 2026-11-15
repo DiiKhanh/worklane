@@ -1,17 +1,30 @@
 # Link Service (URL Shortener) - Design
 
 **Date:** 2026-08-19
-**Status:** Approved (brainstorm). Next: implementation plan (deferred by gate).
+**Status:** Original brainstorm baseline; conflicting first-cut requirements are superseded by the confirmed MVP scope.
 **Reference followed:** [system-design-notes #08 - URL Shortener](https://github.com/liquidslr/system-design-notes/blob/main/08.%20URL%20Shortener/Readme.md).
 **Roadmap piece:** sub-project **C** of the
 [notification-platform + link-service roadmap](../../roadmap/2026-08-16-notification-platform-and-link-service.md).
 
-> **Current gate (2026-11-15).** The
+> **Prior gate (2026-11-15, before design resumption).** The
 > [milestone assessment](../../roadmap/2026-11-15-issue-10-milestone-readiness.md)
 > supersedes the original email-plus-SMS gate. Production email OTP and Template
 > Studio have verification evidence. Twilio test credentials establish integration
 > only; SMS and phone verification remain deferred. Backup/restore is separately
 > deferred, not proven. Link Service requires a separate owner decision to resume.
+
+> **Design resumed (2026-11-15).** The owner resumed design and confirmed the
+> individual decisions and consolidated [MVP scope](../../roadmap/2026-11-15-link-service-mvp-scope.md)
+> before ticket breakdown. The scope records live dashboard,
+> permanent disabling, 60-second cache validity, sanitized analytics without IP
+> hashes, retention and bounded asynchronous emission requirements. It
+> supersedes conflicting details below. Backup/restore and real
+> SMS remain deferred; implementation and rollout have not been authorized.
+
+> **Published specification.** [GitHub issue #11](https://github.com/DiiKhanh/worklane/issues/11)
+> contains the confirmed MVP and tracks six implementation sub-issues. The owner
+> authorized this publication and its supporting documentation commit separately
+> from code implementation and production rollout.
 
 ## 1. Goal
 
