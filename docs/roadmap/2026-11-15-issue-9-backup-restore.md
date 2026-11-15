@@ -4,7 +4,17 @@ Source: [issue #9](https://github.com/DiiKhanh/worklane/issues/9).
 
 ## Status and runtime evidence
 
-**Incomplete, awaiting approval.** No new backup or restore has been performed.
+**Deferred by owner decision on 2026-11-15; verification incomplete.** The project
+is still being built, has only the owner as a user, and data backup is not a
+current priority. The owner confirmed deferring #9 rather than executing the
+proposed drill. Revisit before onboarding other users or retaining data that is
+difficult to recreate. This deferral supersedes #9's inclusion in the current
+verification milestone; it does not establish successful backup or restore.
+
+No new backup or restore has been performed. No additional VPS resources or R2
+configuration will be created under this decision. The GitHub issue has not been
+edited or closed.
+
 The following observations are from 2026-11-15 17:32-17:33 UTC on VPS/node `dk`,
 using `/home/dk/.kube/config`, namespace `worklane`. Repository baseline:
 `a3f60f684cd0c2c4d1191aa52d17f8b36d2f6ade`.
@@ -40,7 +50,10 @@ The earlier private pre-upgrade dump covers only OTP and has no restore proof.
 It cannot satisfy this ticket's two-database requirement. No secret values,
 application rows, email addresses or OTP values were printed during inspection.
 
-## Proposed operation and approval scope
+## Retained procedure for future approval
+
+The following proposal is retained for a future decision, not awaiting immediate
+execution. Recheck runtime state and capacity before requesting fresh approval.
 
 Prefer a direct local backup and isolated restore over provisioning R2 for this
 drill. It uses the existing cached MySQL image and does not require cloud charges,
@@ -49,7 +62,7 @@ VPS failure domain, so this proves restoreability, not off-host disaster recover
 R2 provisioning is a separate decision. Scheduling and stored-object gaps remain
 explicit even if a local restore succeeds.
 
-Requested approval covers a read-only transactional dump of both live databases,
+Future approval would cover a read-only transactional dump of both live databases,
 private local backup/evidence files, and one isolated temporary MySQL Pod on the
 VPS. No live database import, schema change, application deployment, CronJob
 change, notification, external upload or cleanup is included.
@@ -142,8 +155,8 @@ deleting the Pod deletes the restored data in its emptyDir.
 
 - Schedule, retained runs and absent R2 secret: inspected at runtime.
 - Latest R2 stored object: unverified because configured access is absent.
-- Capacity and proposed backup/restore procedure: recorded for approval.
-- New two-database backup identity and successful isolated restore: pending.
+- Capacity and proposed backup/restore procedure: retained for future review.
+- New two-database backup identity and successful isolated restore: deferred.
 - Private artifact preservation and cleanup boundary: specified, not executed.
 
 No application code changed, so no regression test seam or TDD cycle applies.
