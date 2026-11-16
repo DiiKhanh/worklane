@@ -1,10 +1,13 @@
-.PHONY: test cover test-link test-link-schema
+.PHONY: test cover test-link test-link-schema test-link-integration
 
 test:
 	go test ./...
 
 test-link:
-	go test -race ./pkg/idgen ./pkg/contracts/link ./services/link-svc/internal/adapters/inbound/http
+	go test -race ./pkg/idgen ./pkg/contracts/link ./services/link-svc/...
+
+test-link-integration:
+	go test -race -tags=integration ./services/link-svc/... -count=1
 
 test-link-schema:
 	go test -tags=integration ./db/link -count=1

@@ -6,6 +6,7 @@ and the [confirmed MVP scope](../roadmap/2026-11-15-link-service-mvp-scope.md).
 This increment defines wire types, migrations and code generation. HTTP handlers,
 authentication wiring, URL validation, cache/quota behavior, event sanitization,
 ingestion, cleanup scheduling and the live dashboard belong to #13-#17.
+Tenant management from #13 is implemented in [link-management.md](link-management.md).
 
 ## HTTP contract
 

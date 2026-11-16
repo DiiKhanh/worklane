@@ -1,5 +1,4 @@
-// Package http defines the Link management API wire contract. Routing and
-// workflows are implemented in subsequent tickets.
+// Package http implements the tenant-scoped Link management API and wire types.
 package http
 
 import (
