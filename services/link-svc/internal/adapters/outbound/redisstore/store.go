@@ -2,6 +2,7 @@ package redisstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -11,8 +12,9 @@ import (
 )
 
 var (
-	_ app.Quota = (*Store)(nil)
-	_ app.Cache = (*Store)(nil)
+	_ app.Quota        = (*Store)(nil)
+	_ app.Cache        = (*Store)(nil)
+	_ app.MappingCache = (*Store)(nil)
 )
 
 type Store struct {
@@ -50,4 +52,30 @@ func (s *Store) Take(ctx context.Context, tenant string) (time.Duration, error) 
 
 func (s *Store) Evict(ctx context.Context, code string) error {
 	return s.client.Del(ctx, "link:mapping:"+code).Err()
+}
+
+func (s *Store) Load(ctx context.Context, code string) (app.CachedMapping, error) {
+	data, err := s.client.Get(ctx, "link:mapping:"+code).Bytes()
+	if err != nil {
+		return app.CachedMapping{}, err
+	}
+	var mapping app.CachedMapping
+	err = json.Unmarshal(data, &mapping)
+	return mapping, err
+}
+
+// Expiry and the write are atomic. Redis 5 supports PEXPIREAT, including an
+// already-past deadline, so a delayed command cannot create a fresh lease.
+var storeMapping = redis.NewScript(`
+redis.call('SET', KEYS[1], ARGV[1])
+redis.call('PEXPIREAT', KEYS[1], ARGV[2])
+return 1
+`)
+
+func (s *Store) Store(ctx context.Context, mapping app.CachedMapping) error {
+	data, err := json.Marshal(mapping)
+	if err != nil {
+		return err
+	}
+	return storeMapping.Run(ctx, s.client, []string{"link:mapping:" + mapping.Link.Code}, data, mapping.ValidUntil.UnixMilli()).Err()
 }

@@ -3,11 +3,13 @@ package http
 import (
 	"context"
 	"errors"
+	"io"
 	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/duykhanh/worklane/pkg/contracts/link"
 	"github.com/duykhanh/worklane/pkg/platform/metrics"
 	"github.com/duykhanh/worklane/pkg/security"
 	"github.com/duykhanh/worklane/services/link-svc/internal/app"
@@ -21,7 +23,15 @@ type Management interface {
 	Disable(context.Context, string, string) (domain.Link, error)
 }
 
-func NewRouter(svc Management, verifier *security.Verifier, intro app.Introspector, publicBase string) (*gin.Engine, error) {
+type Resolution interface {
+	Resolve(context.Context, string) (domain.Link, error)
+}
+
+type ClickEmitter interface {
+	TryEmit(link.ClickedEvent) bool
+}
+
+func NewRouter(svc Management, verifier *security.Verifier, intro app.Introspector, publicBase string, resolver Resolution, clicks ClickEmitter) (*gin.Engine, error) {
 	u, err := url.Parse(publicBase)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return nil, errors.New("link: LINK_PUBLIC_BASE must be an HTTP/HTTPS origin")
@@ -32,10 +42,15 @@ func NewRouter(svc Management, verifier *security.Verifier, intro app.Introspect
 	}
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.Use(gin.Recovery(), metrics.Middleware())
+	// Gin's default recovery dumps request headers, including raw click metadata.
+	r.Use(gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, _ any) { c.AbortWithStatus(500) }), metrics.Middleware())
+	_ = r.SetTrustedProxies(nil)
+	r.ForwardedByClientIP = false
 	h := &Handlers{svc: svc, publicBase: strings.TrimRight(publicBase, "/"), shortHost: host}
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, HealthResponse{Status: "ok"}) })
-	r.GET("/metrics", metrics.Handler())
+	r.GET("/metrics", emissionMetrics(clicks))
+	r.GET("/:code", redirect(resolver, clicks))
+	r.HEAD("/:code", redirect(resolver, clicks))
 	v1 := r.Group("/v1/links", authenticate(verifier, intro))
 	v1.POST("", h.Create)
 	v1.GET("", h.List)

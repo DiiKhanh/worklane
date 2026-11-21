@@ -1,4 +1,4 @@
-// Command link-svc exposes tenant-scoped short-link management.
+// Command link-svc exposes short-link management and public redirects.
 package main
 
 import (
@@ -9,18 +9,20 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	driver "github.com/go-sql-driver/mysql"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/duykhanh/worklane/pkg/idgen"
 	"github.com/duykhanh/worklane/pkg/platform/config"
 	"github.com/duykhanh/worklane/pkg/platform/mysql"
-	redisplatform "github.com/duykhanh/worklane/pkg/platform/redis"
 	"github.com/duykhanh/worklane/pkg/security"
 	linkhttp "github.com/duykhanh/worklane/services/link-svc/internal/adapters/inbound/http"
 	"github.com/duykhanh/worklane/services/link-svc/internal/adapters/outbound/identity"
+	"github.com/duykhanh/worklane/services/link-svc/internal/adapters/outbound/kafkabus"
 	"github.com/duykhanh/worklane/services/link-svc/internal/adapters/outbound/mysqlrepo"
 	"github.com/duykhanh/worklane/services/link-svc/internal/adapters/outbound/redisstore"
 	"github.com/duykhanh/worklane/services/link-svc/internal/app"
@@ -77,10 +79,14 @@ func main() {
 	}
 	dbConfig.Params["time_zone"] = "'+00:00'"
 	dsn := dbConfig.FormatDSN()
-	rc, err := redisplatform.Open(config.Env("REDIS_URL", "redis://localhost:6379/0"))
+	redisOptions, err := redis.ParseURL(config.Env("REDIS_URL", "redis://localhost:6379/0"))
 	if err != nil {
 		log.Fatal("link-svc: invalid REDIS_URL")
 	}
+	// Cache operations have shorter deadlines than the HTTP request. The Redis
+	// client must honor those deadlines when a server accepts but stops replying.
+	redisOptions.ContextTimeoutEnabled = true
+	rc := redis.NewClient(redisOptions)
 	defer rc.Close()
 	store, err := redisstore.New(rc, limit, window)
 	if err != nil {
@@ -88,7 +94,7 @@ func main() {
 	}
 	intro := identity.NewCached(identity.NewClient(config.Env("AUTH_SVC_URL", "http://localhost:8889"), internalToken), rc, config.EnvDuration("INTROSPECT_CACHE_TTL", time.Minute))
 	// Validate HTTP configuration before any schema changes or listener startup.
-	if _, err := linkhttp.NewRouter(nil, verifier, intro, publicBase); err != nil {
+	if _, err := linkhttp.NewRouter(nil, verifier, intro, publicBase, nil, nil); err != nil {
 		log.Fatal(err)
 	}
 	if err := mysql.Migrate(dsn, config.Env("MIGRATIONS_DIR", "db/link/migrations")); err != nil {
@@ -103,13 +109,20 @@ func main() {
 		log.Fatal("link-svc: database pool unavailable")
 	}
 	defer sqlDB.Close()
+	publisher, err := kafkabus.New(strings.Split(config.Env("KAFKA_BROKERS", "localhost:9092"), ","))
+	if err != nil {
+		log.Fatal("link-svc: invalid Kafka configuration")
+	}
+	const clickQueueCapacity = 256
+	clicks := app.NewEmitter(publisher, clickQueueCapacity)
 	svc := app.New(mysqlrepo.New(db), store, store, codeGenerator{snowflake: ids})
-	router, err := linkhttp.NewRouter(svc, verifier, intro, publicBase)
+	resolver := app.NewResolver(mysqlrepo.New(db), store, time.Now)
+	router, err := linkhttp.NewRouter(svc, verifier, intro, publicBase, resolver, clicks)
 	if err != nil {
 		log.Fatal(err)
 	}
 	srv := &http.Server{Addr: config.Env("HTTP_ADDR", ":8890"), Handler: router,
-		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute}
+		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 32 * 1024}
 	go func() {
 		log.Printf("link-svc: listening on %s", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -124,4 +137,12 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Print("link-svc: shutdown failed")
 	}
+	if err := clicks.Close(ctx); err != nil {
+		log.Print("link-svc: click drain deadline exceeded")
+	}
+	if err := publisher.Close(ctx); err != nil {
+		log.Print("link-svc: Kafka shutdown deadline exceeded")
+	}
+	stats := clicks.Stats()
+	log.Printf("link-svc: clicks published=%d overflow=%d failed=%d shutdown=%d", stats.Published, stats.Overflow, stats.Failed, stats.Shutdown)
 }

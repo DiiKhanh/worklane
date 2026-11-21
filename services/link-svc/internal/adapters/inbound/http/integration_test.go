@@ -50,6 +50,7 @@ type apiFixture struct {
 	apiKey       string
 	redis        *redis.Client
 	db           *sql.DB
+	repo         *mysqlrepo.Repo
 	identityDown atomic.Bool
 }
 
@@ -112,12 +113,16 @@ func newAPI(t *testing.T, limit int, window time.Duration) *apiFixture {
 	}))
 	t.Cleanup(identityServer.Close)
 	intro := identity.NewCached(identity.NewClient(identityServer.URL, "test-internal-token"), f.redis, time.Minute)
-	generator, err := idgen.NewSnowflake(13, func() time.Time { return time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC) })
+	// Database timestamps stay fixed for pagination, while codes remain unique
+	// across fixtures that share the disposable Redis instance.
+	generator, err := idgen.NewSnowflake(13, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := app.New(mysqlrepo.New(db), store, store, integrationIDs{generator: generator})
-	router, err := linkhttp.NewRouter(svc, verifier, intro, "https://short.example/")
+	f.repo = mysqlrepo.New(db)
+	svc := app.New(f.repo, store, store, integrationIDs{generator: generator})
+	resolver := app.NewResolver(f.repo, store, time.Now)
+	router, err := linkhttp.NewRouter(svc, verifier, intro, "https://short.example/", resolver, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

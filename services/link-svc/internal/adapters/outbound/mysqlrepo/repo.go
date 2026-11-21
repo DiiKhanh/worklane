@@ -47,6 +47,12 @@ func (r *Repo) Get(ctx context.Context, tenant, code string) (domain.Link, error
 	return row, translate(err)
 }
 
+func (r *Repo) ByCode(ctx context.Context, code string) (domain.Link, error) {
+	var row domain.Link
+	err := r.db.WithContext(ctx).Table("links").Where("code = ?", code).Take(&row).Error
+	return row, translate(err)
+}
+
 func (r *Repo) List(ctx context.Context, tenant string, before *domain.Position, limit int) ([]domain.Link, error) {
 	query := r.db.WithContext(ctx).Table("links").Where("tenant_id = ?", tenant)
 	if before != nil {

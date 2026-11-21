@@ -3,8 +3,9 @@
 Implements [#13](https://github.com/DiiKhanh/worklane/issues/13) using the
 [approved MVP](../roadmap/2026-11-15-link-service-mvp-scope.md) and existing
 [contracts and schema](link-foundations.md). This increment exposes creation,
-list, detail and permanent disable. Public redirects, analytics, dashboard
-integration and production rollout remain in #14-#17.
+list, detail and permanent disable. Public resolution and click emission are
+described in [link-redirects.md](link-redirects.md). Analytics, dashboard
+integration and production rollout remain in #15-#17.
 
 ## Behavior and boundaries
 
@@ -78,7 +79,7 @@ and disable do not require quota admission.
 
 Disable commits in MySQL before attempting `Cache.Evict`. An eviction failure
 does not undo a durable disable. The cache key is `link:mapping:<code>`; creation
-does not warm mappings in this increment. Ticket #14 must implement the separate
+does not warm mappings. The [public resolver](link-redirects.md) enforces a
 60-second maximum age from the authoritative read's start, including concurrent
 refills. Eviction alone does not establish that revocation bound.
 
