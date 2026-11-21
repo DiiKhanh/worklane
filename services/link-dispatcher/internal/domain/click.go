@@ -2,14 +2,10 @@ package domain
 
 import (
 	"errors"
-	"math"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/duykhanh/worklane/pkg/contracts/link"
-	"github.com/duykhanh/worklane/pkg/idgen"
 )
 
 var (
@@ -17,16 +13,32 @@ var (
 	ErrUnavailable = errors.New("link: persistence unavailable")
 )
 
-func Validate(event link.ClickedEvent, now time.Time) error {
-	id, err := idgen.Decode(event.Code)
-	if err != nil || id > math.MaxInt64 || len(event.TenantID) == 0 || len(event.TenantID) > 36 || !printableASCII(event.TenantID) {
+type Device string
+
+const (
+	DeviceDesktop Device = "desktop"
+	DeviceMobile  Device = "mobile"
+	DeviceTablet  Device = "tablet"
+	DeviceUnknown Device = "unknown"
+)
+
+type Click struct {
+	Code           string
+	TenantID       string
+	TS             time.Time
+	ReferrerOrigin string
+	Device         Device
+}
+
+func Validate(event Click, now time.Time) error {
+	if len(event.TenantID) == 0 || len(event.TenantID) > 36 || !printableASCII(event.TenantID) {
 		return ErrInvalid
 	}
 	if event.TS.IsZero() || event.TS.UTC().Year() < 1000 || event.TS.After(now) {
 		return ErrInvalid
 	}
 	switch event.Device {
-	case link.DeviceDesktop, link.DeviceMobile, link.DeviceTablet, link.DeviceUnknown:
+	case DeviceDesktop, DeviceMobile, DeviceTablet, DeviceUnknown:
 	default:
 		return ErrInvalid
 	}

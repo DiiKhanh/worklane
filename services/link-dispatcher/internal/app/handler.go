@@ -9,7 +9,7 @@ import (
 )
 
 type ClickStore interface {
-	Record(context.Context, link.ClickedEvent, time.Time) error
+	Record(context.Context, domain.Click, time.Time) error
 }
 
 type Handler struct {
@@ -21,9 +21,10 @@ func New(store ClickStore, now func() time.Time) *Handler { return &Handler{stor
 
 func (h *Handler) Handle(ctx context.Context, event link.ClickedEvent) error {
 	now := h.now().UTC()
-	if err := domain.Validate(event, now); err != nil {
+	click := domain.Click{Code: event.Code, TenantID: event.TenantID, TS: event.TS.UTC(), ReferrerOrigin: event.ReferrerOrigin, Device: domain.Device(event.Device)}
+	if err := domain.Validate(click, now); err != nil {
 		return err
 	}
-	event.TS = event.TS.UTC().Truncate(time.Millisecond)
-	return h.store.Record(ctx, event, now)
+	click.TS = click.TS.Truncate(time.Millisecond)
+	return h.store.Record(ctx, click, now)
 }

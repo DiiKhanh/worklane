@@ -32,7 +32,7 @@ func (r *Repo) Expire(ctx context.Context, now time.Time, limit int) (int64, err
 	return result.RowsAffected, nil
 }
 
-func (r *Repo) Record(ctx context.Context, event link.ClickedEvent, now time.Time) error {
+func (r *Repo) Record(ctx context.Context, event domain.Click, now time.Time) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`INSERT INTO link_daily_clicks (tenant_id, code, day, clicks)
 			VALUES (?, ?, ?, 1) ON DUPLICATE KEY UPDATE clicks = clicks + 1`, event.TenantID, event.Code, event.TS.UTC().Format(time.DateOnly)).Error; err != nil {

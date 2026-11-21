@@ -1,10 +1,6 @@
 package domain
 
-import (
-	"time"
-
-	"github.com/duykhanh/worklane/pkg/contracts/link"
-)
+import "time"
 
 const (
 	AnalyticsDays    = 14
@@ -25,5 +21,7 @@ type DailyClicks struct {
 type Visit struct {
 	TS             time.Time
 	ReferrerOrigin string
-	Device         link.Device
+	Device         Device
 }
+
+type Device string

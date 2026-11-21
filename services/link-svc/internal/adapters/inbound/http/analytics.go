@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/duykhanh/worklane/pkg/contracts/link"
 	"github.com/duykhanh/worklane/services/link-svc/internal/domain"
 )
 
@@ -34,7 +35,7 @@ func analytics(reader Analytics) gin.HandlerFunc {
 			out.Series = append(out.Series, DailyClicks{Date: day.Date, Clicks: day.Clicks})
 		}
 		for _, visit := range result.Recent {
-			out.Recent = append(out.Recent, Visit{TS: visit.TS.UTC(), ReferrerOrigin: visit.ReferrerOrigin, Device: visit.Device})
+			out.Recent = append(out.Recent, Visit{TS: visit.TS.UTC(), ReferrerOrigin: visit.ReferrerOrigin, Device: link.Device(visit.Device)})
 		}
 		c.JSON(200, out)
 	}

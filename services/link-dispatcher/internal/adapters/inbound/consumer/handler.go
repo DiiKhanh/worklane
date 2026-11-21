@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/duykhanh/worklane/pkg/contracts/link"
+	"github.com/duykhanh/worklane/pkg/idgen"
 	"github.com/duykhanh/worklane/pkg/platform/kafka"
 	"github.com/duykhanh/worklane/services/link-dispatcher/internal/app"
 	"github.com/duykhanh/worklane/services/link-dispatcher/internal/domain"
@@ -39,8 +41,13 @@ func (h *Handler) Handle(ctx context.Context, value []byte) error {
 		h.rejected.Add(1)
 		return nil
 	}
+	id, err := idgen.Decode(event.Code)
+	if err != nil || id > math.MaxInt64 {
+		h.rejected.Add(1)
+		return nil
+	}
 	writeCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
-	err := h.app.Handle(writeCtx, event)
+	err = h.app.Handle(writeCtx, event)
 	cancel()
 	if errors.Is(err, domain.ErrInvalid) {
 		h.rejected.Add(1)
