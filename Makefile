@@ -4,10 +4,10 @@ test:
 	go test ./...
 
 test-link:
-	go test -race ./pkg/idgen ./pkg/contracts/link ./services/link-svc/...
+	go test -race ./pkg/idgen ./pkg/contracts/link ./services/link-svc/... ./services/link-dispatcher/...
 
 test-link-integration:
-	go test -race -tags=integration ./services/link-svc/... -count=1
+	go test -race -tags=integration ./services/link-svc/... ./services/link-dispatcher/... -count=1
 
 test-link-schema:
 	go test -tags=integration ./db/link -count=1

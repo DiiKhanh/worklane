@@ -69,7 +69,7 @@ func TestHTTPClickReachesIsolatedKafkaWithSanitizedPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(f.repo, cache, time.Now), emitter)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(f.repo, cache, time.Now), emitter, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

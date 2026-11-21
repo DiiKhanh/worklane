@@ -52,6 +52,7 @@ type apiFixture struct {
 	db           *sql.DB
 	repo         *mysqlrepo.Repo
 	identityDown atomic.Bool
+	analyticsNow time.Time
 }
 
 func newAPI(t *testing.T, limit int, window time.Duration) *apiFixture {
@@ -120,9 +121,10 @@ func newAPI(t *testing.T, limit int, window time.Duration) *apiFixture {
 		t.Fatal(err)
 	}
 	f.repo = mysqlrepo.New(db)
+	f.analyticsNow = time.Now()
 	svc := app.New(f.repo, store, store, integrationIDs{generator: generator})
 	resolver := app.NewResolver(f.repo, store, time.Now)
-	router, err := linkhttp.NewRouter(svc, verifier, intro, "https://short.example/", resolver, nil)
+	router, err := linkhttp.NewRouter(svc, verifier, intro, "https://short.example/", resolver, nil, app.NewAnalytics(f.repo, func() time.Time { return f.analyticsNow }))
 	if err != nil {
 		t.Fatal(err)
 	}

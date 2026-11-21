@@ -55,7 +55,7 @@ func TestPublicStatusAndClickPrivacy(t *testing.T) {
 		}
 	}}
 	clicks := &recordedClicks{}
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), clicks)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), clicks, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestReferrersAndDevicesAreSanitizedBeforeAdmission(t *testing.T) {
 		return domain.Link{Code: "G", TenantID: "owner", LongURL: "https://example.com/"}, nil
 	}}
 	clicks := &recordedClicks{}
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), clicks)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), clicks, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

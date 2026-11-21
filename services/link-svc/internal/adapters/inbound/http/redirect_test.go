@@ -35,7 +35,7 @@ func TestRedirectEmitsOnlySanitizedActiveGetClicks(t *testing.T) {
 	broker := clickBroker{events: make(chan link.ClickedEvent, 4)}
 	emitter := app.NewEmitter(broker, 4)
 	t.Cleanup(func() { _ = emitter.Close(context.Background()) })
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), emitter)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), emitter, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestRedirectPreservesExactLocationAndHeadHasNoBody(t *testing.T) {
 		return domain.Link{Code: "G", TenantID: "tenant", LongURL: destination}, nil
 	}}
 	resolver := app.NewResolver(db, cache, time.Now)
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", resolver, nil)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", resolver, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

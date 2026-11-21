@@ -35,7 +35,7 @@ func TestHTTPRedirectsSurviveUnavailableKafka(t *testing.T) {
 		_ = emitter.Close(ctx)
 		_ = publisher.Close(ctx)
 	})
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), emitter)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), emitter, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestHTTPRedirectsDoNotWaitForKafkaOrQueueCapacity(t *testing.T) {
 		cancel()
 		_ = emitter.Close(ctx)
 	})
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), emitter)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, time.Now), emitter, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

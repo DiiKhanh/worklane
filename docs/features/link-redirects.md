@@ -4,8 +4,9 @@ Implements [#14](https://github.com/DiiKhanh/worklane/issues/14), following the
 [approved specification](../roadmap/2026-11-15-link-service-mvp-scope.md) and
 [ADR 0001](../adr/0001-link-redirects-and-best-effort-analytics.md). Tenant
 management is described in [link-management.md](link-management.md).
-Analytics persistence, dashboard integration and stack routing remain in
-#15-#17. This increment performs no production deployment.
+Analytics persistence is described in [link-analytics.md](link-analytics.md).
+Dashboard integration and stack routing remain in #16-#17. This increment
+performs no production deployment.
 
 ## Public HTTP behavior
 

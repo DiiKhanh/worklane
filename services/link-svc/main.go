@@ -94,7 +94,7 @@ func main() {
 	}
 	intro := identity.NewCached(identity.NewClient(config.Env("AUTH_SVC_URL", "http://localhost:8889"), internalToken), rc, config.EnvDuration("INTROSPECT_CACHE_TTL", time.Minute))
 	// Validate HTTP configuration before any schema changes or listener startup.
-	if _, err := linkhttp.NewRouter(nil, verifier, intro, publicBase, nil, nil); err != nil {
+	if _, err := linkhttp.NewRouter(nil, verifier, intro, publicBase, nil, nil, nil); err != nil {
 		log.Fatal(err)
 	}
 	if err := mysql.Migrate(dsn, config.Env("MIGRATIONS_DIR", "db/link/migrations")); err != nil {
@@ -117,7 +117,7 @@ func main() {
 	clicks := app.NewEmitter(publisher, clickQueueCapacity)
 	svc := app.New(mysqlrepo.New(db), store, store, codeGenerator{snowflake: ids})
 	resolver := app.NewResolver(mysqlrepo.New(db), store, time.Now)
-	router, err := linkhttp.NewRouter(svc, verifier, intro, publicBase, resolver, clicks)
+	router, err := linkhttp.NewRouter(svc, verifier, intro, publicBase, resolver, clicks, app.NewAnalytics(mysqlrepo.New(db), time.Now))
 	if err != nil {
 		log.Fatal(err)
 	}

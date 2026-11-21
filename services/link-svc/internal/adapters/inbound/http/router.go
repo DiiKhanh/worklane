@@ -31,7 +31,7 @@ type ClickEmitter interface {
 	TryEmit(link.ClickedEvent) bool
 }
 
-func NewRouter(svc Management, verifier *security.Verifier, intro app.Introspector, publicBase string, resolver Resolution, clicks ClickEmitter) (*gin.Engine, error) {
+func NewRouter(svc Management, verifier *security.Verifier, intro app.Introspector, publicBase string, resolver Resolution, clicks ClickEmitter, reader Analytics) (*gin.Engine, error) {
 	u, err := url.Parse(publicBase)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return nil, errors.New("link: LINK_PUBLIC_BASE must be an HTTP/HTTPS origin")
@@ -55,6 +55,7 @@ func NewRouter(svc Management, verifier *security.Verifier, intro app.Introspect
 	v1.POST("", h.Create)
 	v1.GET("", h.List)
 	v1.GET("/:code", h.Get)
+	v1.GET("/:code/analytics", analytics(reader))
 	v1.POST("/:code/disable", h.Disable)
 	return r, nil
 }

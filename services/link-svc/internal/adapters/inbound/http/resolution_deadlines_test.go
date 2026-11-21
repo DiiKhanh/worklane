@@ -27,7 +27,7 @@ func TestStalledRedisCannotConsumeRedirectBudget(t *testing.T) {
 	db := redirectDB{read: func(context.Context, string) (domain.Link, error) {
 		return domain.Link{Code: "G", TenantID: "owner", LongURL: "https://example.com/"}, nil
 	}}
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, stalledCache{}, time.Now), nil)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, stalledCache{}, time.Now), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestConcurrentDisableAndLateRefillCannotExtendDeadlineDuringDBOutage(t *tes
 		}
 		return domain.Link{}, domain.ErrUnavailable
 	}}
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, now), nil)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(db, cache, now), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

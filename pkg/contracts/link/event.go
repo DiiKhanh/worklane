@@ -4,6 +4,8 @@ package link
 
 import "time"
 
+const DetailRetention = 30 * 24 * time.Hour
+
 type State string
 
 const (

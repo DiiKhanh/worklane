@@ -15,7 +15,7 @@ import (
 
 func publicRouter(t *testing.T, repo app.CodeReader, cache app.MappingCache, now func() time.Time) http.Handler {
 	t.Helper()
-	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(repo, cache, now), nil)
+	router, err := linkhttp.NewRouter(nil, nil, nil, "https://short.example", app.NewResolver(repo, cache, now), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
