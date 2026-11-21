@@ -95,8 +95,10 @@ batches are bounded. Initial Kafka metadata lookup is deferred until publication
 so a Kafka outage does not prevent redirect startup.
 
 Shutdown stops admission, drains within the shared ten-second process shutdown
-budget, then cancels remaining work. Producer completion channels continue to
-be drained, including after a publication times out. There are no per-event
+budget, then cancels remaining work. Publication admission is synchronized with
+producer closure so a delayed worker cannot send to a closed Kafka input.
+Producer completion channels continue to be drained, including after a
+publication times out. There are no per-event
 goroutines. Cancellation or a lost acknowledgement can leave delivery uncertain,
 as permitted by best-effort analytics.
 

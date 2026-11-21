@@ -13,9 +13,11 @@ import (
 // Publisher uses the repository envelope with context-bounded acknowledgement.
 // Its single caller is the emission worker, never an HTTP handler.
 type Publisher struct {
-	producer sarama.AsyncProducer
-	done     chan struct{}
-	close    sync.Once
+	producer  sarama.AsyncProducer
+	done      chan struct{}
+	closing   chan struct{}
+	admission sync.RWMutex
+	close     sync.Once
 }
 
 func New(brokers []string) (*Publisher, error) {
@@ -41,7 +43,7 @@ func New(brokers []string) (*Publisher, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Publisher{producer: producer, done: make(chan struct{})}
+	p := &Publisher{producer: producer, done: make(chan struct{}), closing: make(chan struct{})}
 	go p.results()
 	return p, nil
 }
@@ -56,10 +58,25 @@ func (p *Publisher) Publish(ctx context.Context, topic string, event any) error 
 	if key, ok := event.(interface{ PartitionKey() string }); ok {
 		message.Key = sarama.StringEncoder(key.PartitionKey())
 	}
+	// A canceled worker can reach Publish after Emitter.Close returns. Stop
+	// admission before Sarama closes Input, including when both selects are ready.
+	p.admission.RLock()
 	select {
+	case <-p.closing:
+		p.admission.RUnlock()
+		return sarama.ErrShuttingDown
+	default:
+	}
+	select {
+	case <-p.closing:
+		err = sarama.ErrShuttingDown
 	case <-ctx.Done():
-		return ctx.Err()
+		err = ctx.Err()
 	case p.producer.Input() <- message:
+	}
+	p.admission.RUnlock()
+	if err != nil {
+		return err
 	}
 	select {
 	case <-ctx.Done():
@@ -90,9 +107,14 @@ func (p *Publisher) results() {
 	}
 }
 
-// Close follows Emitter.Close; no further Publish calls may start afterwards.
+// Close follows Emitter.Close and rejects any late publication admission.
 func (p *Publisher) Close(ctx context.Context) error {
-	p.close.Do(p.producer.AsyncClose)
+	p.close.Do(func() {
+		close(p.closing)
+		p.admission.Lock()
+		p.producer.AsyncClose()
+		p.admission.Unlock()
+	})
 	select {
 	case <-p.done:
 		return nil
