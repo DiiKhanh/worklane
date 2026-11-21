@@ -7,12 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
-	"github.com/redis/go-redis/v9"
-
 	"github.com/duykhanh/worklane/pkg/contracts/link"
 	linkhttp "github.com/duykhanh/worklane/services/link-svc/internal/adapters/inbound/http"
-	"github.com/duykhanh/worklane/services/link-svc/internal/adapters/outbound/redisstore"
 	"github.com/duykhanh/worklane/services/link-svc/internal/app"
 	"github.com/duykhanh/worklane/services/link-svc/internal/domain"
 )
@@ -29,13 +25,7 @@ func (b clickBroker) Publish(_ context.Context, _ string, event any) error {
 }
 
 func TestRedirectEmitsOnlySanitizedActiveGetClicks(t *testing.T) {
-	server := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
-	t.Cleanup(func() { _ = client.Close() })
-	cache, err := redisstore.New(client, 10, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cache, _ := redirectCache(t)
 	db := redirectDB{read: func(_ context.Context, code string) (domain.Link, error) {
 		if code != "G" {
 			return domain.Link{}, domain.ErrNotFound
@@ -74,13 +64,7 @@ func (db redirectDB) ByCode(ctx context.Context, code string) (domain.Link, erro
 }
 
 func TestRedirectPreservesExactLocationAndHeadHasNoBody(t *testing.T) {
-	server := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
-	t.Cleanup(func() { _ = client.Close() })
-	cache, err := redisstore.New(client, 10, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cache, _ := redirectCache(t)
 	const destination = "https://example.com/a%2fb?b=2&a=1#section"
 	db := redirectDB{read: func(context.Context, string) (domain.Link, error) {
 		return domain.Link{Code: "G", TenantID: "tenant", LongURL: destination}, nil
