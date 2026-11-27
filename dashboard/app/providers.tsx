@@ -2,7 +2,7 @@
 
 import { ThemeProvider } from "next-themes";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useUIStore } from "@/lib/store/ui";
@@ -31,6 +31,17 @@ export function Providers({ children }: { children: ReactNode }) {
           queries: { staleTime: 10_000, refetchOnWindowFocus: false, retry: 1 },
         },
       }),
+  );
+
+  // A new session may belong to another tenant. Drop every cached server response
+  // whenever the token changes (login, re-login or the 401 sign-out above) so no
+  // screen can briefly render the previous identity's data.
+  useEffect(
+    () =>
+      useUIStore.subscribe((state, previous) => {
+        if (state.token !== previous.token) queryClient.clear();
+      }),
+    [queryClient],
   );
 
   return (

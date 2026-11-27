@@ -100,3 +100,36 @@ export type CreateTemplateInput = {
   note?: string;
 };
 export type AddVersionInput = { subject: string; body: string; note?: string };
+
+// --- Links (link-svc) ---
+
+export type LinkState = "active" | "disabled";
+export type LinkDevice = "desktop" | "mobile" | "tablet" | "unknown";
+
+/** Owned link metadata. Independent of analytics availability. */
+export type Link = {
+  code: string;
+  shortUrl: string; // built by link-svc from its configured public base
+  longUrl: string;
+  state: LinkState;
+  createdAt: string; // RFC3339 UTC
+  disabledAt: string | null;
+};
+
+/** One cursor page, newest first. `nextCursor` is null on the final page. */
+export type LinkPage = { items: Link[]; nextCursor: string | null };
+
+/** `created` is false when an active link for the same destination was returned. */
+export type CreateLinkResult = { code: string; shortUrl: string; created: boolean };
+
+export type LinkVisit = {
+  ts: string;
+  referrerOrigin: string; // empty when unknown
+  device: LinkDevice;
+};
+
+export type LinkAnalytics = {
+  totalClicks: number; // lifetime recorded redirects
+  series: { date: string; clicks: number }[]; // 14 UTC days, oldest first, today last
+  recent: LinkVisit[]; // up to 20 retained visits, newest first
+};

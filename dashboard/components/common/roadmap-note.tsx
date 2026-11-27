@@ -1,8 +1,7 @@
 import { Info } from "lucide-react";
 
 /**
- * The dashed "this is a proposal" banner shown on roadmap screens (Templates,
- * Links, Campaigns). Copy is fixed and matches the design-system UI kit.
+ * The dashed "this is a proposal" banner shown on roadmap screens (Campaigns). Copy is fixed and matches the design-system UI kit.
  */
 export function RoadmapNote() {
   return (

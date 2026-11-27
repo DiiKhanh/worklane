@@ -1,9 +1,15 @@
 import type { DataSource } from "./source";
+import { ApiError } from "./errors";
 import type {
   AddVersionInput,
   ApiKey,
+  CreateLinkResult,
   CreateTemplateInput,
   DeliveryLog,
+  Link,
+  LinkAnalytics,
+  LinkDevice,
+  LinkPage,
   Overview,
   OtpRequest,
   PreviewInput,
@@ -60,6 +66,29 @@ function toVersion(v: versionJSON): TemplateVersion {
     note: v.note ?? "",
     createdBy: v.created_by ?? "",
     createdAt: v.created_at ?? "",
+  };
+}
+
+// Raw link-svc wire shapes (services/link-svc/internal/adapters/inbound/http/dto.go).
+type linkJSON = {
+  code: string;
+  short_url: string;
+  long_url: string;
+  state: string;
+  created_at: string;
+  disabled_at: string | null;
+};
+
+const DEVICES: readonly LinkDevice[] = ["desktop", "mobile", "tablet", "unknown"];
+
+function toLink(l: linkJSON): Link {
+  return {
+    code: l.code,
+    shortUrl: l.short_url,
+    longUrl: l.long_url,
+    state: l.state === "disabled" ? "disabled" : "active",
+    createdAt: l.created_at,
+    disabledAt: l.disabled_at ?? null,
   };
 }
 
@@ -257,5 +286,72 @@ export class LiveDataSource implements DataSource {
 
   async previewTemplate(input: PreviewInput): Promise<PreviewResult> {
     return this.post<PreviewResult>("/v1/templates/preview", input);
+  }
+
+  // --- Links (link-svc) ---
+
+  /** Sends a link-svc request; non-2xx responses reject with a typed ApiError. */
+  private async linkRequest(method: "GET" | "POST", path: string, body?: unknown): Promise<Response> {
+    const res = await fetch(this.baseUrl + path, {
+      method,
+      headers: this.authHeaders(),
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (res.ok) return res;
+    let code = "";
+    try {
+      code = ((await res.json()) as { error?: string }).error ?? "";
+    } catch {
+      // Non-JSON error bodies (e.g. a gateway page) keep the status alone.
+    }
+    const retryAfter = Number(res.headers?.get("Retry-After"));
+    throw new ApiError(res.status, code, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
+  }
+
+  private linkPath(code: string, suffix = ""): string {
+    return `/v1/links/${encodeURIComponent(code)}${suffix}`;
+  }
+
+  async listLinks(cursor?: string): Promise<LinkPage> {
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    const res = await this.linkRequest("GET", `/v1/links${query}`);
+    const body = (await res.json()) as { items: linkJSON[]; next_cursor: string | null };
+    return { items: body.items.map(toLink), nextCursor: body.next_cursor ?? null };
+  }
+
+  async getLink(code: string): Promise<Link> {
+    const res = await this.linkRequest("GET", this.linkPath(code));
+    return toLink((await res.json()) as linkJSON);
+  }
+
+  async getLinkAnalytics(code: string): Promise<LinkAnalytics> {
+    const res = await this.linkRequest("GET", this.linkPath(code, "/analytics"));
+    const body = (await res.json()) as {
+      total_clicks: number;
+      series: { date: string; clicks: number }[];
+      recent: { ts: string; referrer_origin: string; device: string }[];
+    };
+    return {
+      totalClicks: body.total_clicks,
+      series: body.series,
+      recent: body.recent.map((v) => ({
+        ts: v.ts,
+        referrerOrigin: v.referrer_origin,
+        device: DEVICES.find((d) => d === v.device) ?? "unknown",
+      })),
+    };
+  }
+
+  async createLink(longUrl: string): Promise<CreateLinkResult> {
+    const res = await this.linkRequest("POST", "/v1/links", { long_url: longUrl });
+    const body = (await res.json()) as { code: string; short_url: string };
+    // 201 issues a new code; 200 returns the tenant's existing active link.
+    return { code: body.code, shortUrl: body.short_url, created: res.status === 201 };
+  }
+
+  async disableLink(code: string): Promise<Link> {
+    const res = await this.linkRequest("POST", this.linkPath(code, "/disable"));
+    return toLink((await res.json()) as linkJSON);
   }
 }

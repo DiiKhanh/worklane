@@ -87,8 +87,9 @@ _Light: [campaigns-light.png](assets/dashboard/campaigns-light.png)_
 
 ### Links
 
-Short links carried by notifications, with click KPIs, a 14-day clicks-over-time
-chart, and recent-click events.
+Create, copy and permanently disable short links, with cursor-paginated listing.
+Each link's detail shows lifetime recorded clicks, a 14-day UTC clicks chart and
+recent visits, with manual refresh and an unavailable state instead of zeros.
 
 ![Links](assets/dashboard/links-dark.png)
 
