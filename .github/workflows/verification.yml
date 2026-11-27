@@ -3,6 +3,8 @@ name: verification
 on:
   push:
     branches: [verification/issue-5]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -109,4 +111,101 @@ jobs:
       - name: Tear down disposable stack
         if: always()
         working-directory: deploy/compose
+        run: docker compose down -v
+
+  link-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - run: make test-link
+      - run: make test-link-schema
+      - run: make test-link-integration
+
+  link-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      COMPOSE_FILE: deploy/compose/docker-compose.yml
+      COMPOSE_PROFILES: links
+      COMPOSE_PROJECT_NAME: worklane-links-${{ github.run_id }}-${{ github.run_attempt }}
+      WORKLANE_GATEWAY_PORT: "19780"
+      WORKLANE_DASHBOARD_PORT: "19781"
+      WORKLANE_MYSQL_PORT: "19782"
+      WORKLANE_LINK_MYSQL_PORT: "19783"
+      WORKLANE_REDIS_PORT: "19784"
+      WORKLANE_KAFKA_PORT: "19785"
+      WORKLANE_TRAEFIK_PORT: "19786"
+      E2E_API_BASE: http://127.0.0.1:19780
+      LINK_PUBLIC_BASE: http://127.0.0.1:19780
+      WORKLANE_DASHBOARD_API_BASE: http://127.0.0.1:19780
+      LINK_E2E_DASHBOARD: http://127.0.0.1:19781
+      LINK_E2E_EMAIL: links-a@example.test
+      LINK_E2E_SECOND_EMAIL: links-b@example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Generate disposable credentials
+        run: |
+          keys="$RUNNER_TEMP/link-secrets"
+          mkdir -m 700 "$keys"
+          openssl genpkey -algorithm ed25519 -out "$keys/auth_priv.pem"
+          openssl pkey -in "$keys/auth_priv.pem" -pubout -out "$keys/auth_pub.pem"
+          echo "AUTH_SECRETS_DIR=$keys" >> "$GITHUB_ENV"
+          for name in MYSQL_ROOT_PASSWORD LINK_DB_ROOT_PASSWORD LINK_DB_PASSWORD INTERNAL_API_TOKEN LINK_E2E_PASSWORD; do
+            value=$(openssl rand -hex 24)
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+      - name: Build and start the Links stack
+        run: docker compose up -d --build dashboard link-dispatcher
+      - name: Wait for the live Links pipeline
+        run: |
+          for i in $(seq 1 60); do
+            login=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+              -H 'Content-Type: application/json' \
+              -d '{"email":"missing@example.test","password":"unused"}' "$E2E_API_BASE/auth/login" || true)
+            if [ "$login" = 401 ] && curl -fsS --max-time 2 -o /dev/null "$E2E_API_BASE/healthz" &&
+              curl -fsS --max-time 2 -o /dev/null "$LINK_E2E_DASHBOARD/login" &&
+              docker compose exec -T redpanda rpk group describe link-dispatcher 2>/dev/null | grep -q 'STATE.*Stable'; then
+              exit 0
+            fi
+            echo "attempt $i: auth-login=$login"
+            sleep 2
+          done
+          echo 'Links stack did not become ready'
+          exit 1
+      - name: Verify gateway and API lifecycle
+        run: |
+          export MYSQL_DSN="root:$MYSQL_ROOT_PASSWORD@tcp(127.0.0.1:$WORKLANE_MYSQL_PORT)/identity?parseTime=true"
+          export LINK_E2E_MYSQL_DSN="links:$LINK_DB_PASSWORD@tcp(127.0.0.1:$WORKLANE_LINK_MYSQL_PORT)/links?parseTime=true"
+          make test-link-e2e
+      - name: Seed browser tenants
+        run: |
+          export MYSQL_DSN="root:$MYSQL_ROOT_PASSWORD@tcp(127.0.0.1:$WORKLANE_MYSQL_PORT)/identity?parseTime=true"
+          for email in "$LINK_E2E_EMAIL" "$LINK_E2E_SECOND_EMAIL"; do
+            go run ./services/seed --name 'Links verification' --email "$email" --password "$LINK_E2E_PASSWORD" >/dev/null
+          done
+      - name: Verify the live dashboard in Chromium
+        working-directory: dashboard
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+          pnpm test:links-e2e
+      - name: Show stack diagnostics on failure
+        if: failure()
+        run: |
+          docker compose ps --all
+          docker compose logs --no-color auth-svc link-svc link-dispatcher traefik dashboard
+      - name: Tear down disposable stack
+        if: always()
         run: docker compose down -v

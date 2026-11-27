@@ -2,7 +2,7 @@
 
 Worklane is a tenant-scoped OTP messaging platform, with a Template Studio and a Link Service. The OTP API creates and verifies one-time passcodes; the dispatcher sends delivery messages and records outcomes. Template Studio manages versioned email and SMS templates used by OTP delivery. The Link Service provides tenant-scoped short links, public redirects, and click analytics.
 
-The existing dispatcher sends email through SMTP (MailHog locally) or Resend. A Twilio SMS adapter is present, but real SMS and phone verification remain deferred. The broader general-purpose Notification Service described in the design documents is not implemented. Link Service API and worker code are present; its MVP is tracked in [issue #11](https://github.com/DiiKhanh/worklane/issues/11), and dashboard integration is in progress.
+The existing dispatcher sends email through SMTP (MailHog locally) or Resend. A Twilio SMS adapter is present, but real SMS and phone verification remain deferred. The broader general-purpose Notification Service described in the design documents is not implemented. The Link Service MVP includes a live Links dashboard and an opt-in local Compose stack. Its scope is tracked in [issue #11](https://github.com/DiiKhanh/worklane/issues/11).
 
 ## Repository layout
 
@@ -15,9 +15,9 @@ The existing dispatcher sends email through SMTP (MailHog locally) or Resend. A 
 | `services/link-dispatcher` | Asynchronous click-event persistence and analytics worker |
 | `services/seed` | CLI for provisioning a tenant, user, and API key |
 | `pkg/` | Shared platform packages, event contracts, ID generation, security, and template rendering |
-| `dashboard/` | Next.js dashboard for OTP operations and Template Studio; Link Service dashboard work is in progress |
+| `dashboard/` | Next.js dashboard for OTP operations, Template Studio, and the Link Service |
 | `db/` | Identity, OTP, and Link Service SQL migrations |
-| `deploy/compose` | Local OTP stack with MySQL, Redis, Redpanda, MailHog, gateway, and developer UIs |
+| `deploy/compose` | Local OTP stack and opt-in Link Service profile with MySQL, Redis, Redpanda, and Traefik |
 | `deploy/k8s` | Kubernetes base manifests and production overlay |
 | `docs/` | Architecture, feature behavior, operations, learning notes, roadmap, and decisions |
 
@@ -43,7 +43,7 @@ openssl pkey -in deploy/compose/secrets/auth_priv.pem -pubout -out deploy/compos
 docker compose -f deploy/compose/docker-compose.yml up -d --build
 ```
 
-The stack exposes the gateway at `http://localhost`, Traefik's dashboard at `http://localhost:8090`, Adminer at `http://localhost:8081`, RedisInsight at `http://localhost:5540`, Redpanda Console at `http://localhost:8085`, and MailHog at `http://localhost:8025`. The Compose file currently starts the auth and OTP services and their infrastructure; it does not start the Link Service deployables.
+The stack exposes the gateway at `http://localhost`, Traefik's dashboard at `http://localhost:8090`, Adminer at `http://localhost:8081`, RedisInsight at `http://localhost:5540`, Redpanda Console at `http://localhost:8085`, and MailHog at `http://localhost:8025`. The [isolated Link Service stack](docs/verification/link-service-mvp.md) documents the `links` profile, local credentials, and end-to-end checks.
 
 Stop the stack while keeping its data volumes:
 
@@ -95,6 +95,7 @@ The root Makefile does not define Go lint or typecheck targets.
 - [Architecture](docs/architecture.md) and [repository layout reference](docs/reference/architecture-and-layout.md)
 - [Template Studio design](docs/superpowers/specs/2026-08-29-template-studio-design.md)
 - [Link Service feature docs](docs/features/link-foundations.md), [management](docs/features/link-management.md), [redirects](docs/features/link-redirects.md), and [analytics](docs/features/link-analytics.md)
+- [Link Service isolated stack and MVP verification](docs/verification/link-service-mvp.md)
 - [Link Service MVP scope](docs/roadmap/2026-11-15-link-service-mvp-scope.md) and [tracker issue #11](https://github.com/DiiKhanh/worklane/issues/11)
 - [Notification platform roadmap](docs/roadmap/2026-08-16-notification-platform-and-link-service.md) and [notification system design](docs/superpowers/specs/2026-08-19-notification-system-design.md)
 - [Operations runbooks](docs/runbooks/)

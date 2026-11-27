@@ -36,9 +36,8 @@ jobs:
         run: docker compose up -d --build
       - name: Wait for services to be ready
         run: |
-          # /healthz is intentionally not exposed via Traefik. An unauthenticated
-          # call returns 401 once the service is up, routed, and (for auth-svc) has
-          # migrated the identity schema the e2e seed needs. 502/000 while down.
+          # An unauthenticated auth or OTP call returns 401 once routed and ready.
+          # Invalid auth credentials reach the migrated identity schema.
           hit() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
           for i in $(seq 1 60); do
             # well-formed body so a bad login reaches the DB lookup (401 = schema ready);

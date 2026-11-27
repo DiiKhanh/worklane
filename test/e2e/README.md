@@ -23,6 +23,10 @@ What it asserts:
 - `POST /v1/otp/verify` with the wrong code → `401`, with the correct code → `200`.
 - `POST /v1/otp/send` without a key → `401`.
 
+The Link Service has a separate `make test-link-e2e` target and a live dashboard
+browser check. The [Link Service verification guide](../../docs/verification/link-service-mvp.md)
+describes the disposable stack and the required environment.
+
 ## Overrides (env)
 
 | Var | Default | Meaning |

@@ -1,6 +1,13 @@
 .git
 .github
 dashboard/node_modules
+dashboard/.next
+dashboard/next-env.d.ts
+dashboard/*.tsbuildinfo
+**/.env
+**/.env.*
+**/*.pem
+deploy/compose/secrets
 docs
 *.md
 cover.out

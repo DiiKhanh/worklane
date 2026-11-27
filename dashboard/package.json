@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
+    "test:links-e2e": "tsx scripts/links-e2e.ts",
     "test:watch": "vitest",
     "capture": "tsx scripts/capture.ts"
   },

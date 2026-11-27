@@ -1,9 +1,8 @@
-# Traefik dynamic config: route /v1/* to otp-api, with an edge rate-limit and CORS
-# middleware. API-key auth is enforced inside otp-api, not here.
+# Traefik local routes. Management authentication is enforced inside each API.
 http:
   routers:
     otpapi:
-      rule: "PathPrefix(`/v1`)"
+      rule: "Path(`/v1`) || PathPrefix(`/v1/`)"
       entryPoints:
         - web
       service: otpapi
@@ -11,12 +10,32 @@ http:
         - otp-ratelimit
         - otp-cors
     authsvc:
-      rule: "PathPrefix(`/auth`)"
+      rule: "Path(`/auth`) || PathPrefix(`/auth/`)"
       entryPoints:
         - web
       service: authsvc
       middlewares:
         - otp-cors
+    link-management:
+      rule: "Path(`/v1/links`) || PathPrefix(`/v1/links/`)"
+      entryPoints:
+        - web
+      service: linksvc
+      middlewares:
+        - otp-cors
+    link-health:
+      rule: "Path(`/healthz`) && Method(`GET`)"
+      entryPoints:
+        - web
+      service: linksvc
+    link-redirect:
+      rule: "PathRegexp(`^/[0-9A-Za-z]{1,11}$`) && !Path(`/metrics`) && (Method(`GET`) || Method(`HEAD`))"
+      priority: 1
+      entryPoints:
+        - web
+      service: linksvc
+      middlewares:
+        - link-redirect-ratelimit
 
   services:
     otpapi:
@@ -27,12 +46,23 @@ http:
       loadBalancer:
         servers:
           - url: "http://auth-svc:8889"
+    linksvc:
+      loadBalancer:
+        servers:
+          - url: "http://link-svc:8890"
 
   middlewares:
     otp-ratelimit:
       rateLimit:
         average: 100
         burst: 50
+    link-redirect-ratelimit:
+      rateLimit:
+        average: 100
+        period: 1s
+        burst: 50
+        # The default source criterion uses the socket peer IP. Forwarded
+        # headers and request hosts cannot select a different bucket.
     otp-cors:
       headers:
         accessControlAllowMethods:
@@ -46,3 +76,5 @@ http:
           - authorization
           - content-type
           - idempotency-key
+        accessControlExposeHeaders:
+          - Retry-After
