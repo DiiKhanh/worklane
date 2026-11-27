@@ -88,10 +88,17 @@ func TestEventTimeUsesUTCAndTopicRetentionIsBounded(t *testing.T) {
 	for _, entry := range entries {
 		settings[entry.Name] = entry.Value
 	}
-	for key, want := range map[string]string{"cleanup.policy": "delete", "retention.ms": "604800000", "segment.ms": "3600000", "file.delete.delay.ms": "60000", "message.timestamp.type": "LogAppendTime"} {
+	for key, want := range map[string]string{
+		"cleanup.policy": "delete", "retention.ms": "604800000",
+		"segment.ms": "3600000", "message.timestamp.type": "LogAppendTime",
+	} {
 		if settings[key] != want {
 			t.Fatalf("%s=%s, want %s", key, settings[key], want)
 		}
+	}
+	// Redpanda manages segment deletion without Kafka's per-topic file delay.
+	if delay, supported := settings["file.delete.delay.ms"]; supported && delay != "60000" {
+		t.Fatalf("file.delete.delay.ms=%s, want 60000", delay)
 	}
 	_, stop := f.start(t)
 	t.Cleanup(stop)

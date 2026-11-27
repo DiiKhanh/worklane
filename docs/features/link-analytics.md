@@ -87,7 +87,7 @@ updates only these settings on an existing topic:
 | `cleanup.policy` | `delete` |
 | `retention.ms` | `604800000` (seven days) |
 | `segment.ms` | `3600000` (one hour) |
-| `file.delete.delay.ms` | `60000` (one minute) |
+| `file.delete.delay.ms` | `60000` (one minute) when supported by the broker |
 | `message.timestamp.type` | `LogAppendTime` |
 
 Broker append time prevents producer clock skew from extending Kafka retention.
@@ -95,7 +95,9 @@ Seven days leaves substantial margin below the 30-day raw-event limit because
 [Kafka retention works on whole segments and asynchronous deletion](https://kafka.apache.org/39/configuration/topic-level-configs/).
 The broker retention check interval must remain bounded below that margin
 (the Kafka default is five minutes); broker failure or stopped cleanup cannot
-provide a physical deletion deadline. The topic initializer requires topic
+provide a physical deletion deadline. The local Redpanda broker uses its own
+segment deletion process and omits Kafka's per-topic file deletion delay from
+its reported settings. The topic initializer requires topic
 creation/configuration permissions and fails startup if it cannot establish
 the policy. Existing partitions, replication and unrelated settings are
 preserved. New topics use one partition and one replica for the standalone MVP.
