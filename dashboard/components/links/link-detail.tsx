@@ -215,7 +215,11 @@ function AnalyticsBody({ data }: { data: LinkAnalytics }) {
           label="Busiest day"
           icon={CalendarDays}
           accent="var(--state-requested)"
-          hint={peak ? `${dayLabel(peak.date)} (UTC)` : "no clicks in the last 14 days"}
+          hint={
+            peak
+              ? `${peak.date === data.series.at(-1)?.date ? "Today" : dayLabel(peak.date)} (UTC)`
+              : "no clicks in the last 14 days"
+          }
         >
           {peak ? peak.clicks.toLocaleString("en-US") : "-"}
         </StatCard>
