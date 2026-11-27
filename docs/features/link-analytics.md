@@ -186,3 +186,34 @@ contract fixture. Retention boundaries used injected clocks.
 
 The smoke timing is a local sample, not a production guarantee. No production
 deployment, data mutation, messaging or backup/restore operation was performed.
+
+### Referrer compatibility regression and revalidation
+
+Revalidated on 2026-11-27 against source based on `591d9e4` with the
+producer-side referrer correction. The isolated dependencies were MySQL
+8.0.42, Redis 5.0.7 and Apache Kafka 3.9.0; checks used Go 1.25.0.
+
+Before correction, an active public GET with `Referer: https://例.com/private`
+returned 302 and published a Unicode origin that the dispatcher rejected.
+An ASCII control request incremented analytics to one, but the Unicode request
+left the total at one after ten seconds. Origins exceeding 512 bytes had the
+same producer/consumer incompatibility. HTTP and real-Kafka regression tests
+failed before the implementation changed.
+
+Unsupported origins now become unknown before queue admission. The consumer
+continues to reject malformed events. Regression coverage includes Unicode
+hosts, oversized origins, ASCII hosts with Unicode paths, punycode hosts,
+GET-only publication and sanitized real Kafka payloads.
+
+| Check | Result |
+| --- | --- |
+| `make test-link` | Passed with the race detector |
+| `make test-link-integration` | Passed with the race detector and isolated real dependencies |
+| `make test-link-schema` | Passed against isolated MySQL |
+| `make test`, `go build ./...`, `go vet ./...` | Passed |
+| Compiled HTTP to Kafka to MySQL to authenticated analytics API | Unicode and oversized referrers both incremented totals with unknown origins, visible after 41 ms and 39 ms respectively |
+
+These timings are local samples. Testcontainers startup was not exercised;
+the existing disposable-dependency overrides selected the isolated processes.
+The checks establish backend acceptance for #15; browser and load acceptance
+remain in #16/#17. This revalidation did not change CI coverage or production.

@@ -76,56 +76,63 @@ func TestHTTPClickReachesIsolatedKafkaWithSanitizedPayload(t *testing.T) {
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for _, method := range []string{"HEAD", "GET"} {
-		req, err := http.NewRequest(method, server.URL+"/"+created.Code, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req.Header.Set("Referer", "https://user:secret@REF.example:8443/private?token=sensitive#fragment")
-		req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone) Mobile/raw-metadata")
-		req.Header.Set("X-Forwarded-For", "192.0.2.12")
-		response, err := client.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, _ = io.Copy(io.Discard, response.Body)
-		_ = response.Body.Close()
-		if response.StatusCode != 302 {
-			t.Fatalf("%s returned %d", method, response.StatusCode)
-		}
+	cases := []struct{ referrer, wantOrigin string }{
+		{"https://user:secret@REF.example:8443/private?token=sensitive#fragment", "https://ref.example:8443"},
+		{"https://例.com/private?token=sensitive", ""},
+		{"https://" + strings.Repeat("x", 505) + ".example/private?token=sensitive", ""},
 	}
-	select {
-	case message := <-partition.Messages():
-		var event link.ClickedEvent
-		kind, err := kafka.Unwrap(message.Value, &event)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if kind != "link.ClickedEvent" || string(message.Key) != created.Code || event.Code != created.Code || event.TenantID != f.tenant || event.ReferrerOrigin != "https://ref.example:8443" || event.Device != link.DeviceMobile || event.TS.IsZero() {
-			t.Fatalf("incorrect Kafka event: %+v", event)
-		}
-		var envelope kafka.Envelope
-		if err := json.Unmarshal(message.Value, &envelope); err != nil {
-			t.Fatal(err)
-		}
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(envelope.Data, &fields); err != nil || len(fields) != 5 {
-			t.Fatal("unexpected event fields reached Kafka")
-		}
-		for _, forbidden := range []string{"secret", "private", "sensitive", "fragment", "raw-metadata", "192.0.2.12", "user_agent", "ip_hash"} {
-			if strings.Contains(string(message.Value), forbidden) {
-				t.Fatalf("raw request metadata reached Kafka: %s", forbidden)
+	for _, tc := range cases {
+		for _, method := range []string{"HEAD", "GET"} {
+			req, err := http.NewRequest(method, server.URL+"/"+created.Code, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Referer", tc.referrer)
+			req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone) Mobile/raw-metadata")
+			req.Header.Set("X-Forwarded-For", "192.0.2.12")
+			response, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = io.Copy(io.Discard, response.Body)
+			_ = response.Body.Close()
+			if response.StatusCode != 302 {
+				t.Fatalf("%s returned %d", method, response.StatusCode)
 			}
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("sanitized GET click did not reach Kafka")
+		select {
+		case message := <-partition.Messages():
+			var event link.ClickedEvent
+			kind, err := kafka.Unwrap(message.Value, &event)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind != "link.ClickedEvent" || string(message.Key) != created.Code || event.Code != created.Code || event.TenantID != f.tenant || event.ReferrerOrigin != tc.wantOrigin || event.Device != link.DeviceMobile || event.TS.IsZero() {
+				t.Fatalf("incorrect Kafka event: %+v", event)
+			}
+			var envelope kafka.Envelope
+			if err := json.Unmarshal(message.Value, &envelope); err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(envelope.Data, &fields); err != nil || len(fields) != 5 {
+				t.Fatal("unexpected event fields reached Kafka")
+			}
+			for _, forbidden := range []string{"secret", "private", "sensitive", "fragment", "raw-metadata", "192.0.2.12", "user_agent", "ip_hash"} {
+				if strings.Contains(string(message.Value), forbidden) {
+					t.Fatalf("raw request metadata reached Kafka: %s", forbidden)
+				}
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("sanitized GET click did not reach Kafka")
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := emitter.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if stats := emitter.Stats(); stats.Published != 1 || stats.Failed != 0 {
+	if stats := emitter.Stats(); stats.Published != uint64(len(cases)) || stats.Failed != 0 {
 		t.Fatalf("HEAD emitted a click or GET publication failed: %+v", stats)
 	}
 }

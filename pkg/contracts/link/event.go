@@ -24,7 +24,8 @@ const (
 
 // ClickedEvent describes an active GET that returned 302. TS is event time in
 // UTC. ReferrerOrigin is an HTTP/HTTPS origin only (no credentials, path, query
-// or fragment), or empty for unknown. Producers sanitize before queue admission;
+// or fragment), at most 512 visible ASCII bytes, or empty for unknown.
+// Producers map unsupported origins to unknown before queue admission;
 // consumers validate before persistence. Raw request metadata is never included.
 type ClickedEvent struct {
 	Code           string    `json:"code"`

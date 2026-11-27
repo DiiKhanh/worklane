@@ -81,6 +81,10 @@ sequenceDiagram
 Only GET responses returning an active 302 admit `link.ClickedEvent`. Before
 admission, referrers become an HTTP/HTTPS origin with credentials, path, query
 and fragment removed; missing or invalid referrers become an empty origin.
+Origins containing non-ASCII characters or exceeding 512 bytes also become
+unknown before queue admission, preserving the click while satisfying the
+analytics consumer's validation and storage limits. ASCII origins remain
+usable when only the removed path contains Unicode characters.
 Raw User-Agent becomes desktop, mobile, tablet or unknown. Bots and unrecognized
 agents are unknown. Oversized metadata is unknown. The event contains only
 code, tenant, UTC timestamp, referrer origin and device category. Destination,

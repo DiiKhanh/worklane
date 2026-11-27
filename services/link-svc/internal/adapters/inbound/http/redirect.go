@@ -15,6 +15,8 @@ import (
 	"github.com/duykhanh/worklane/services/link-svc/internal/domain"
 )
 
+const maxReferrerOriginBytes = 512
+
 func redirect(resolver Resolution, clicks ClickEmitter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
@@ -61,7 +63,17 @@ func referrerOrigin(raw string) string {
 			return ""
 		}
 	}
-	return u.Scheme + "://" + strings.ToLower(u.Host)
+	origin := u.Scheme + "://" + strings.ToLower(u.Host)
+	// Unsupported origins become unknown so the dispatcher can retain the click.
+	if len(origin) > maxReferrerOriginBytes {
+		return ""
+	}
+	for _, char := range origin {
+		if char < '!' || char > '~' {
+			return ""
+		}
+	}
+	return origin
 }
 
 func deviceCategory(raw string) link.Device {
