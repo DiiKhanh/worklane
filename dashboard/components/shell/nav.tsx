@@ -25,7 +25,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/playground", label: "Playground", icon: FlaskConical },
   { href: "/templates", label: "Templates", icon: FileText, soon: true },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone, soon: true },
-  { href: "/links", label: "Links", icon: LinkIcon, soon: true },
+  { href: "/links", label: "Links", icon: LinkIcon },
 ];
 
 export function Nav() {

@@ -1,8 +1,12 @@
 import type {
   AddVersionInput,
   ApiKey,
+  CreateLinkResult,
   CreateTemplateInput,
   DeliveryLog,
+  Link,
+  LinkAnalytics,
+  LinkPage,
   Overview,
   OtpRequest,
   PreviewInput,
@@ -33,4 +37,11 @@ export interface DataSource {
   addVersion(id: string, input: AddVersionInput): Promise<TemplateVersion>;
   publishVersion(id: string, versionId: string): Promise<void>;
   previewTemplate(input: PreviewInput): Promise<PreviewResult>;
+
+  // Links (link-svc). Failures reject with ApiError so screens can branch on status.
+  listLinks(cursor?: string): Promise<LinkPage>;
+  getLink(code: string): Promise<Link>;
+  getLinkAnalytics(code: string): Promise<LinkAnalytics>;
+  createLink(longUrl: string): Promise<CreateLinkResult>;
+  disableLink(code: string): Promise<Link>;
 }

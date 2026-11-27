@@ -52,6 +52,11 @@ In `live` mode the dashboard calls the auth/otp REST endpoints
 `/v1/stats`, `/v1/otp/send|verify`) with a Bearer token. The Overview screen reads tenant-scoped
 rolling 24h aggregates from `/v1/stats`.
 
+The Links screen calls link-svc's `/v1/links` routes through the same gateway, so the
+gateway must route `/v1/links*` to link-svc. Short URLs shown and copied are the
+`short_url` values link-svc returns from its `LINK_PUBLIC_BASE`. See
+[../docs/features/link-dashboard.md](../docs/features/link-dashboard.md).
+
 Architecture rule: server data lives only in the TanStack Query cache; Zustand
 holds UI state only (filters, token). Theme is owned by next-themes.
 

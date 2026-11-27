@@ -1,9 +1,14 @@
 import type { DataSource } from "./source";
+import { MockLinks } from "./mock-links";
 import type {
   AddVersionInput,
   ApiKey,
+  CreateLinkResult,
   CreateTemplateInput,
   DeliveryLog,
+  Link,
+  LinkAnalytics,
+  LinkPage,
   Overview,
   OtpRequest,
   OtpState,
@@ -182,6 +187,7 @@ export class MockDataSource implements DataSource {
   private readonly codes = new Map<string, string>();
   private readonly templates: Template[];
   private readonly versions: Record<string, TemplateVersion[]>;
+  private readonly links: MockLinks;
   private seq = 0;
 
   constructor(opts: Options = {}) {
@@ -192,6 +198,7 @@ export class MockDataSource implements DataSource {
     const tpl = buildTemplates(this.t0);
     this.templates = tpl.templates;
     this.versions = tpl.versions;
+    this.links = new MockLinks(this.now);
     // Three deliveries that "land" a few seconds apart after construction.
     const r = rng(0x1234abcd);
     this.inflight = [4000, 9000, 16000].map((offset) => ({
@@ -351,6 +358,33 @@ export class MockDataSource implements DataSource {
   async previewTemplate(input: PreviewInput): Promise<PreviewResult> {
     await this.latency();
     return { subject: renderPreview(input.subject), body: renderPreview(input.body) };
+  }
+
+  // --- Links ---
+
+  async listLinks(cursor?: string): Promise<LinkPage> {
+    await this.latency();
+    return this.links.list(cursor);
+  }
+
+  async getLink(code: string): Promise<Link> {
+    await this.latency();
+    return this.links.get(code);
+  }
+
+  async getLinkAnalytics(code: string): Promise<LinkAnalytics> {
+    await this.latency();
+    return this.links.analytics(code);
+  }
+
+  async createLink(longUrl: string): Promise<CreateLinkResult> {
+    await this.latency();
+    return this.links.create(longUrl);
+  }
+
+  async disableLink(code: string): Promise<Link> {
+    await this.latency();
+    return this.links.disable(code);
   }
 }
 

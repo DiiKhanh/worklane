@@ -1,151 +1,184 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import {
-  Link as LinkIcon,
-  MousePointerClick,
-  TrendingUp,
-  Zap,
-} from "lucide-react";
-import type { Link } from "@/lib/roadmap/links";
-import { LINKS, LINK_KPIS } from "@/lib/roadmap/links";
+import { Link as LinkIcon } from "lucide-react";
+import type { Link } from "@/lib/api/types";
+import { timeAgo } from "@/lib/format";
+import { useLinkPage } from "@/lib/queries/use-links";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeading } from "@/components/common/section-heading";
-import { RoadmapNote } from "@/components/common/roadmap-note";
 import { Panel } from "@/components/common/panel";
-import { StatCard } from "@/components/common/stat-card";
-import { CountUp } from "@/components/common/count-up";
 import { DataTable } from "@/components/common/data-table";
 import { CopyButton } from "@/components/common/copy-button";
-import { LinkDetail } from "./link-detail";
+import { EmptyState } from "@/components/common/empty-state";
+import { StateBadge } from "@/components/common/state-badge";
+import { CreateLinkForm } from "./create-link-form";
+import { LinkDetail, formatDateTime } from "./link-detail";
+import { Unavailable } from "./unavailable";
+
+// link-svc's default page size; the API, not the table, paginates.
+const PAGE_SIZE = 20;
 
 const columns: ColumnDef<Link>[] = [
   {
-    accessorKey: "code",
-    header: "Short code",
+    accessorKey: "shortUrl",
+    header: "Short link",
+    enableSorting: false,
     cell: ({ row }) => (
-      <span className="group/row inline-flex items-center gap-1.5">
-        <span className="font-mono text-[13px]">wl.link/{row.original.code}</span>
-        <CopyButton
-          value={`https://wl.link/${row.original.code}`}
-          label="Copy short link"
-        />
+      <span className="inline-flex items-center gap-1.5">
+        <span className="font-mono text-[13px]">{row.original.shortUrl}</span>
+        <CopyButton value={row.original.shortUrl} label={`Copy ${row.original.shortUrl}`} />
       </span>
     ),
   },
   {
-    accessorKey: "target",
-    header: "Target",
+    accessorKey: "longUrl",
+    header: "Destination",
+    enableSorting: false,
     cell: ({ row }) => (
-      <span className="block max-w-[280px] truncate font-mono text-[13px] text-muted-foreground">
-        {row.original.target}
+      <span
+        title={row.original.longUrl}
+        className="block max-w-[320px] truncate font-mono text-[13px] text-muted-foreground"
+      >
+        {row.original.longUrl}
       </span>
     ),
   },
   {
-    accessorKey: "clicks",
-    header: "Clicks",
-    cell: ({ row }) => (
-      <span className="font-mono text-[13px] tabular-nums">
-        {row.original.clicks.toLocaleString("en-US")}
-      </span>
-    ),
+    accessorKey: "state",
+    header: "State",
+    enableSorting: false,
+    cell: ({ row }) => <StateBadge state={row.original.state} />,
   },
   {
-    accessorKey: "ctr",
-    header: "CTR",
-    cell: ({ row }) => (
-      <span className="font-mono text-[13px] tabular-nums text-muted-foreground">
-        {Math.round(row.original.ctr * 100)}%
-      </span>
-    ),
-  },
-  {
-    accessorKey: "created",
+    accessorKey: "createdAt",
     header: "Created",
+    enableSorting: false,
     cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">{row.original.created}</span>
+      <span className="text-sm text-muted-foreground" title={formatDateTime(row.original.createdAt)}>
+        {timeAgo(row.original.createdAt)}
+      </span>
     ),
   },
 ];
 
+type Selection = { code: string; initial?: Link };
+
 export function LinksView() {
-  const [open, setOpen] = useState<Link | null>(null);
-  if (open) {
-    return <LinkDetail link={open} onBack={() => setOpen(null)} />;
+  // Cursors of the pages visited so far; the last entry is the current page.
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const [open, setOpen] = useState<Selection | null>(null);
+  const page = useLinkPage(cursors[cursors.length - 1]);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLTableRowElement | null>(null);
+
+  // Move focus into the detail on open and back to the activating row on close.
+  useLayoutEffect(() => {
+    if (open) detailRef.current?.querySelector("button")?.focus({ preventScroll: true });
+    else if (triggerRef.current?.isConnected) triggerRef.current.focus({ preventScroll: true });
+  }, [open]);
+
+  const pageNumber = cursors.length;
+  const items = page.data?.items ?? [];
+  const nextCursor = page.data?.nextCursor ?? null;
+
+  let list: React.ReactNode;
+  if (page.data) {
+    list =
+      items.length === 0 && pageNumber === 1 ? (
+        <EmptyState
+          icon={LinkIcon}
+          title="No links yet"
+          description="Shorten a URL above to create your first link."
+        />
+      ) : (
+        <>
+          <DataTable
+            columns={columns}
+            data={items}
+            pageSize={PAGE_SIZE}
+            rowKey={(l) => l.code}
+            onRowClick={(l, element) => {
+              triggerRef.current = element;
+              setOpen({ code: l.code, initial: l });
+            }}
+          />
+          {(pageNumber > 1 || nextCursor) && (
+            <nav
+              aria-label="Links pagination"
+              className="mt-3 flex items-center justify-between gap-4 text-sm text-muted-foreground"
+            >
+              <span className="tabular-nums">Page {pageNumber}</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCursors((c) => c.slice(0, -1))}
+                  disabled={pageNumber === 1 || page.isFetching}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => nextCursor && setCursors((c) => [...c, nextCursor])}
+                  disabled={!nextCursor || page.isFetching}
+                >
+                  Next
+                </Button>
+              </div>
+            </nav>
+          )}
+        </>
+      );
+  } else if (page.isError) {
+    list = (
+      <Unavailable
+        title="Links unavailable"
+        description="Your links could not be loaded from the link service."
+        onRetry={() => void page.refetch()}
+        retrying={page.isFetching}
+      />
+    );
+  } else {
+    list = <Skeleton aria-busy="true" aria-label="Loading links" className="h-64 rounded-xl" />;
   }
 
   return (
-    <div>
-      <SectionHeading
-        title="Links"
-        description="Short links carried by notifications, and what they earn. Select a link for its clicks."
-      />
-      <RoadmapNote />
-      <div className="grid gap-4">
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard
-            label="Links created"
-            icon={LinkIcon}
-            accent="var(--state-sent)"
-            hint="last 30 days"
-          >
-            <CountUp value={LINK_KPIS.created} />
-          </StatCard>
-          <StatCard
-            label="Clicks"
-            icon={MousePointerClick}
-            accent="var(--state-verified)"
-            hint="302 redirects served"
-          >
-            <CountUp value={LINK_KPIS.clicks} />
-          </StatCard>
-          <StatCard
-            label="Click rate"
-            icon={TrendingUp}
-            hint="of delivered messages"
-          >
-            <CountUp
-              value={LINK_KPIS.clickRate}
-              format={(v) => `${Math.round(v * 100)}%`}
-            />
-          </StatCard>
-          <StatCard
-            label="Cache hit"
-            icon={Zap}
-            accent="var(--state-requested)"
-            hint="Redis cache-aside"
-          >
-            <CountUp
-              value={LINK_KPIS.cacheHit}
-              format={(v) => `${Math.round(v * 100)}%`}
-            />
-          </StatCard>
-        </div>
-        <Panel
-          title="Shorten a URL"
-          description="base62 over a distributed id - codes are never enumerable"
-        >
-          <div className="flex gap-2">
-            <Input placeholder="https://worklane.io/settings/notifications" />
-            <Button className="shrink-0">
-              <LinkIcon className="size-4" />
-              Create
-            </Button>
-          </div>
-          <div className="mt-4">
-            <DataTable
-              columns={columns}
-              data={LINKS}
-              pageSize={10}
-              rowKey={(l) => l.code}
-              onRowClick={setOpen}
-            />
-          </div>
-        </Panel>
+    <>
+      <div ref={detailRef} hidden={!open}>
+        {open && (
+          <LinkDetail
+            key={open.code}
+            code={open.code}
+            initial={open.initial}
+            onBack={() => setOpen(null)}
+          />
+        )}
       </div>
-    </div>
+      <div hidden={!!open}>
+        <SectionHeading
+          title="Links"
+          description="Shorten URLs, copy them, and see the clicks they record. Select a link for details."
+        />
+        {/* grid-cols-1 is minmax(0, 1fr): the wide table scrolls inside its panel. */}
+        <div className="grid grid-cols-1 gap-4">
+          <Panel title="Shorten a URL" description="Shortening the same URL again returns its existing link">
+            <CreateLinkForm
+              onCreated={() => setCursors([undefined])}
+              onOpen={(code) => {
+                triggerRef.current = null;
+                setOpen({ code });
+              }}
+            />
+          </Panel>
+          <Panel title="Your links" description="Newest first">
+            {list}
+          </Panel>
+        </div>
+      </div>
+    </>
   );
 }
