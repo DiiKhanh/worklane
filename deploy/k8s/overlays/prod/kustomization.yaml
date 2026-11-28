@@ -24,10 +24,11 @@ images:
 - name: seed
   newName: ghcr.io/diikhanh/worklane-seed
   newTag: sha-041efd7
-# First-publish tags. Replace with the published SHA tags and digests before rollout.
 - name: link-svc
   newName: ghcr.io/diikhanh/worklane-link-svc
-  newTag: latest
+  newTag: sha-5781578
+  digest: sha256:c747ef3b257be3c0324a1b8254a4e49fadd7caaef0267048e729190bcc74f1e7
 - name: link-dispatcher
   newName: ghcr.io/diikhanh/worklane-link-dispatcher
-  newTag: latest
+  newTag: sha-5781578
+  digest: sha256:ded8e193c0e38e6678d4b610cf4e522c78cbe2d69e193e3e9d3872c41e88faec
