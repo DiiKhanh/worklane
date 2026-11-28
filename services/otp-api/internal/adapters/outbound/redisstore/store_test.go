@@ -4,7 +4,6 @@ package redisstore_test
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
@@ -45,32 +44,50 @@ func newStore(t *testing.T) (*redisstore.Store, *goredis.Client) {
 	return redisstore.New(client), client
 }
 
-func TestStore_SaveGetDelete(t *testing.T) {
+func TestStore_SaveGetConsume(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := context.Background()
 
+	const key = "otp:code:t1:a@b.co"
 	rec := app.CodeRecord{Hash: "h", Salt: "req-1", Attempts: 2}
-	if err := s.Save(ctx, "otp:code:t1:a@b.co", rec, time.Minute); err != nil {
+	if err := s.Save(ctx, key, rec, time.Minute); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	got, err := s.Get(ctx, "otp:code:t1:a@b.co")
+	got, err := s.Get(ctx, key)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
 	if got != rec {
 		t.Fatalf("round-trip mismatch: got %+v want %+v", got, rec)
 	}
-	if err := s.Delete(ctx, "otp:code:t1:a@b.co"); err != nil {
-		t.Fatalf("delete: %v", err)
+	if err := s.Consume(ctx, key, "superseded-request"); err != domain.ErrNotFound {
+		t.Fatalf("consume superseded code: got %v, want ErrNotFound", err)
 	}
-	if _, err := s.Get(ctx, "otp:code:t1:a@b.co"); err != domain.ErrNotFound {
-		t.Fatalf("get after delete want ErrNotFound, got %v", err)
+
+	const consumers = 2
+	results := make(chan error, consumers)
+	for range consumers {
+		go func() { results <- s.Consume(ctx, key, rec.Salt) }()
+	}
+	consumed := 0
+	for range consumers {
+		switch err := <-results; err {
+		case nil:
+			consumed++
+		case domain.ErrNotFound:
+		default:
+			t.Errorf("consume current code: %v", err)
+		}
+	}
+	if consumed != 1 {
+		t.Fatalf("successful consumers = %d, want 1", consumed)
+	}
+	if _, err := s.Get(ctx, key); err != domain.ErrNotFound {
+		t.Fatalf("get after consume: got %v, want ErrNotFound", err)
 	}
 }
 
-// A wrong guess must not extend a code's lifetime: the absolute expiry set at issuance
-// stays exactly where it was after the attempt is recorded.
-func TestStore_IncrAttempts_KeepsExpiryFixed(t *testing.T) {
+func TestStore_ReserveAttempt_KeepsExpiryFixed(t *testing.T) {
 	s, client := newStore(t)
 	ctx := context.Background()
 	const key = "otp:code:t1:a@b.co"
@@ -82,12 +99,13 @@ func TestStore_IncrAttempts_KeepsExpiryFixed(t *testing.T) {
 	// Let time pass so a TTL reset would land on a visibly later deadline.
 	time.Sleep(50 * time.Millisecond)
 
-	n, err := s.IncrAttempts(ctx, key)
+	reserved, err := s.ReserveAttempt(ctx, key, 3)
 	if err != nil {
-		t.Fatalf("incr attempts: %v", err)
+		t.Fatalf("reserve attempt: %v", err)
 	}
-	if n != 1 {
-		t.Fatalf("first failed attempt want count 1, got %d", n)
+	rec.Attempts = 1
+	if reserved != rec {
+		t.Fatalf("reserved record = %+v, want %+v", reserved, rec)
 	}
 	if after := client.PExpireTime(ctx, key).Val(); after != before {
 		t.Fatalf("expiry moved from %v to %v; attempts must not extend the code's lifetime", before, after)
@@ -96,12 +114,12 @@ func TestStore_IncrAttempts_KeepsExpiryFixed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if want := (app.CodeRecord{Hash: "h", Salt: "req-1", Attempts: 1}); got != want {
-		t.Fatalf("record after incr = %+v, want %+v", got, want)
+	if got != rec {
+		t.Fatalf("stored record after reservation = %+v, want %+v", got, rec)
 	}
 }
 
-func TestStore_IncrAttempts_ExpiredKeyIsNotRecreated(t *testing.T) {
+func TestStore_ReserveAttempt_ExpiredKeyIsNotRecreated(t *testing.T) {
 	s, client := newStore(t)
 	ctx := context.Background()
 	const key = "otp:code:t1:a@b.co"
@@ -110,15 +128,15 @@ func TestStore_IncrAttempts_ExpiredKeyIsNotRecreated(t *testing.T) {
 	}
 	time.Sleep(150 * time.Millisecond)
 
-	if _, err := s.IncrAttempts(ctx, key); err != domain.ErrNotFound {
-		t.Fatalf("incr on expired code want ErrNotFound, got %v", err)
+	if _, err := s.ReserveAttempt(ctx, key, 3); err != domain.ErrNotFound {
+		t.Fatalf("reserve attempt on expired code: got %v, want ErrNotFound", err)
 	}
 	if n := client.Exists(ctx, key).Val(); n != 0 {
-		t.Fatal("incr must not resurrect an expired code")
+		t.Fatal("reservation recreated the expired code")
 	}
 }
 
-func TestStore_IncrAttempts_ConcurrentAttemptsAllCount(t *testing.T) {
+func TestStore_ReserveAttempt_ConcurrentSlotsAreUnique(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := context.Background()
 	const key = "otp:code:t1:a@b.co"
@@ -126,17 +144,24 @@ func TestStore_IncrAttempts_ConcurrentAttemptsAllCount(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 	const attempts = 20
-	var wg sync.WaitGroup
-	for i := 0; i < attempts; i++ {
-		wg.Add(1)
+	counts := make(chan int, attempts)
+	for range attempts {
 		go func() {
-			defer wg.Done()
-			if _, err := s.IncrAttempts(ctx, key); err != nil {
-				t.Errorf("incr attempts: %v", err)
+			rec, err := s.ReserveAttempt(ctx, key, attempts)
+			if err != nil {
+				t.Errorf("reserve attempt: %v", err)
 			}
+			counts <- rec.Attempts
 		}()
 	}
-	wg.Wait()
+	seen := make(map[int]bool, attempts)
+	for range attempts {
+		count := <-counts
+		if count < 1 || count > attempts || seen[count] {
+			t.Errorf("invalid or duplicate reserved attempt number %d", count)
+		}
+		seen[count] = true
+	}
 	got, err := s.Get(ctx, key)
 	if err != nil {
 		t.Fatalf("get: %v", err)

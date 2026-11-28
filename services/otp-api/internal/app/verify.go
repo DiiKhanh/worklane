@@ -14,32 +14,23 @@ type VerifyInput struct {
 	Code      string
 }
 
-// Verify checks a submitted code. It enforces the attempt lock (anti brute-force),
-// compares in constant time, and on success deletes the code (single-use) and marks the
-// request verified.
+// Verify reserves an attempt before comparing a submitted code in constant time.
+// Every comparison, including a match on the last allowed attempt, uses one slot.
+// On a match, Verify consumes the code and marks the request verified.
 //
-// Returns: nil on success; ErrNotFound if no active code (expired/absent);
-// ErrTooManyAttempts once the attempt cap is reached; ErrCodeMismatch on a wrong guess.
+// A missing or expired code returns ErrNotFound. A request beyond the attempt cap
+// returns ErrTooManyAttempts. A compared code that does not match returns ErrCodeMismatch.
 func (s *Service) Verify(ctx context.Context, in VerifyInput) error {
 	key := codeKey(in.TenantID, in.Recipient)
-	rec, err := s.d.Store.Get(ctx, key)
+	rec, err := s.d.Store.ReserveAttempt(ctx, key, s.cfg.MaxVerifyAttempts)
 	if err != nil {
-		return err // ErrNotFound when the code expired or never existed
-	}
-	if rec.Attempts >= s.cfg.MaxVerifyAttempts {
-		return domain.ErrTooManyAttempts
+		return err
 	}
 	if !domain.VerifyHash(rec.Hash, in.Code, rec.Salt) {
-		// Count the failed attempt and persist it, so the cap survives across requests.
-		// The wrong guess itself always returns a mismatch (the caller used a valid try);
-		// the lock is enforced by the guard above on the NEXT call once the cap is hit -
-		// after which even the correct code is rejected. IncrAttempts keeps the code's
-		// expiry fixed at issuance: re-saving with the full TTL here would let every wrong
-		// guess extend the code's lifetime.
-		_, _ = s.d.Store.IncrAttempts(ctx, key)
 		return domain.ErrCodeMismatch
 	}
-	// Success: delete the code so it cannot be reused, then record the verified state.
-	_ = s.d.Store.Delete(ctx, key)
+	if err := s.d.Store.Consume(ctx, key, rec.Salt); err != nil {
+		return err
+	}
 	return s.d.Repo.UpdateState(ctx, rec.Salt, contracts.StateVerified)
 }
