@@ -16,6 +16,11 @@ resources:
   - auth-svc/svc.yaml
   - auth-svc/deployment.yaml
   - otp-dispatcher/deployment.yaml
+  - link-mysql/svc.yaml
+  - link-mysql/statefulset.yaml
+  - link-svc/svc.yaml
+  - link-svc/deployment.yaml
+  - link-dispatcher/deployment.yaml
   - ingress/middlewares.yaml
   - observability/alloy-config.yaml
   - observability/alloy.yaml

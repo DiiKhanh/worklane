@@ -16,4 +16,17 @@ spec:
     accessControlAllowMethods: ["GET", "POST", "DELETE", "OPTIONS"]
     accessControlAllowHeaders: ["authorization", "content-type", "idempotency-key"]
     accessControlAllowOriginList: ["https://worklane-six.vercel.app"]
+    accessControlExposeHeaders: ["Retry-After"]
     accessControlMaxAge: 86400
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: link-redirect-ratelimit
+spec:
+  rateLimit:
+    average: 100
+    period: 1s
+    burst: 50
+    sourceCriterion:
+      requestHeaderName: CF-Connecting-IP

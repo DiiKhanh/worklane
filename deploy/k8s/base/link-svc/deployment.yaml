@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: link-svc
+spec:
+  replicas: 1
+  # A rollout must stop the old Pod before the replacement can use Snowflake node 1.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: link-svc
+  template:
+    metadata:
+      labels:
+        app: link-svc
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "until nc -z link-mysql 3306; do echo waiting for link-mysql; sleep 2; done"
+      containers:
+        - name: link-svc
+          image: link-svc # tag pinned by the overlay
+          ports:
+            - containerPort: 8890
+          env:
+            - name: LINK_NODE_ID
+              value: "1"
+            - name: MYSQL_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: worklane-links
+                  key: LINK_MYSQL_DSN
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: worklane-config
+                  key: REDIS_URL
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: worklane-config
+                  key: KAFKA_BROKERS
+            - name: AUTH_SVC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: worklane-config
+                  key: AUTH_SVC_URL
+            - name: INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: worklane-secrets
+                  key: INTERNAL_API_TOKEN
+            - name: AUTH_JWT_PUBLIC_KEY_FILE
+              value: /secrets/auth_pub.pem
+          volumeMounts:
+            - name: jwt
+              mountPath: /secrets
+              readOnly: true
+          startupProbe:
+            httpGet: { path: /healthz, port: 8890 }
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8890 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8890 }
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits: { cpu: "250m", memory: "256Mi" }
+      volumes:
+        - name: jwt
+          secret:
+            secretName: worklane-jwt
+            items:
+              - key: auth_pub.pem
+                path: auth_pub.pem

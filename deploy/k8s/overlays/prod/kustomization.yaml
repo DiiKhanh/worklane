@@ -4,8 +4,11 @@ namespace: worklane
 resources:
 - ../../base
 - ingressroute.yaml
+- link-ingressroutes.yaml
   # seed-job.yaml is applied on demand, not part of the default apply:
   #   kubectl apply -f deploy/k8s/overlays/prod/seed-job.yaml
+patches:
+- path: link-svc-patch.yaml
 images:
 - name: auth-svc
   newName: ghcr.io/diikhanh/worklane-auth-svc
@@ -21,3 +24,10 @@ images:
 - name: seed
   newName: ghcr.io/diikhanh/worklane-seed
   newTag: sha-041efd7
+# First-publish tags. Replace with the published SHA tags and digests before rollout.
+- name: link-svc
+  newName: ghcr.io/diikhanh/worklane-link-svc
+  newTag: latest
+- name: link-dispatcher
+  newName: ghcr.io/diikhanh/worklane-link-dispatcher
+  newTag: latest

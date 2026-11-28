@@ -278,3 +278,26 @@ Services never import each other's `internal/` (Go enforces it). otp-api and otp
 the shared `pkg/contracts` event schema and the `otp` database; otp-api calls auth-svc over HTTP for
 API-key introspection. Those boundaries keep each service independently deployable and, later,
 independently extractable into its own repo.
+
+## 7. Link Service on k3s
+
+Traefik routes both Link hosts to `link-svc`. The API and dispatcher share a
+dedicated MySQL instance. `link-svc` applies the Link schema at startup, and
+`link-dispatcher` consumes click events from the shared Redpanda broker.
+
+```mermaid
+flowchart TB
+    Client["Dashboard and public visitors"] --> Tunnel["Cloudflare Tunnel"] --> Traefik["Traefik"]
+    Traefik -->|"api-otp host /v1/links"| Links["link-svc :8890"]
+    Traefik -->|"Short host redirects and health"| Links
+    Links -->|"API key introspection"| Auth["auth-svc"]
+    Links -->|"Cache and create quota"| Redis[("Shared Redis")]
+    Links -->|"Mappings and analytics reads"| MySQL[("link-mysql")]
+    Links -->|"link.clicked"| Kafka["Shared Redpanda"]
+    Kafka --> Dispatcher["link-dispatcher"]
+    Dispatcher -->|"Store click analytics"| MySQL
+    Alloy["Alloy"] -. "Scrape metrics" .-> Links
+```
+
+See the [k3s deploy runbook](../deploy/k8s/README.md#link-routing) for the host rules
+and rollout prerequisites.
