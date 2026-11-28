@@ -55,11 +55,13 @@ type CodeStore interface {
 	// Save writes a record with a fresh lifetime of ttl. Only issuing a code may do this.
 	Save(ctx context.Context, key string, rec CodeRecord, ttl time.Duration) error
 	Get(ctx context.Context, key string) (CodeRecord, error)
-	// IncrAttempts atomically adds one failed attempt to an existing record and returns
-	// the new count. It keeps the record's remaining lifetime unchanged and returns
-	// domain.ErrNotFound instead of recreating a record that has already expired.
-	IncrAttempts(ctx context.Context, key string) (int, error)
-	Delete(ctx context.Context, key string) error
+	// ReserveAttempt atomically counts one attempt and returns the record to compare.
+	// It preserves expiry and returns domain.ErrNotFound for a missing record or
+	// domain.ErrTooManyAttempts if all slots are taken.
+	ReserveAttempt(ctx context.Context, key string, maxAttempts int) (CodeRecord, error)
+	// Consume deletes the record only if it still belongs to requestID.
+	// A missing or superseded record returns domain.ErrNotFound.
+	Consume(ctx context.Context, key, requestID string) error
 }
 
 // Counter backs rate limiting, cooldown markers, and idempotency keys (Redis).

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 // fakeStore models Redis key expiry against clock, so tests can observe a code's
 // lifetime the way the real adapter enforces it.
 type fakeStore struct {
+	mu    sync.Mutex
 	m     map[string]CodeRecord
 	exp   map[string]time.Time
 	clock Clock
@@ -22,11 +24,15 @@ func newFakeStore(clock Clock) *fakeStore {
 	return &fakeStore{m: map[string]CodeRecord{}, exp: map[string]time.Time{}, clock: clock}
 }
 func (f *fakeStore) Save(_ context.Context, k string, r CodeRecord, ttl time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.m[k] = r
 	f.exp[k] = f.clock.Now().Add(ttl)
 	return nil
 }
 func (f *fakeStore) Get(_ context.Context, k string) (CodeRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.expire(k)
 	r, ok := f.m[k]
 	if !ok {
@@ -34,17 +40,32 @@ func (f *fakeStore) Get(_ context.Context, k string) (CodeRecord, error) {
 	}
 	return r, nil
 }
-func (f *fakeStore) IncrAttempts(_ context.Context, k string) (int, error) {
+func (f *fakeStore) ReserveAttempt(_ context.Context, k string, maxAttempts int) (CodeRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.expire(k)
 	r, ok := f.m[k]
 	if !ok {
-		return 0, domain.ErrNotFound
+		return CodeRecord{}, domain.ErrNotFound
+	}
+	if r.Attempts >= maxAttempts {
+		return CodeRecord{}, domain.ErrTooManyAttempts
 	}
 	r.Attempts++
 	f.m[k] = r // expiry deadline untouched, like Redis KEEPTTL
-	return r.Attempts, nil
+	return r, nil
 }
-func (f *fakeStore) Delete(_ context.Context, k string) error { delete(f.m, k); return nil }
+func (f *fakeStore) Consume(_ context.Context, k, requestID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.expire(k)
+	if r, ok := f.m[k]; !ok || r.Salt != requestID {
+		return domain.ErrNotFound
+	}
+	delete(f.m, k)
+	delete(f.exp, k)
+	return nil
+}
 
 func (f *fakeStore) expire(k string) {
 	if deadline, ok := f.exp[k]; ok && !f.clock.Now().Before(deadline) {
@@ -201,13 +222,17 @@ func TestSend_OmittedChannel_DefaultsToEmail(t *testing.T) {
 func TestVerify_WrongCode_LocksAfterMax(t *testing.T) {
 	svc, _, _ := newSvc()
 	ctx := context.Background()
-	_, _ = svc.Send(ctx, SendInput{TenantID: "t1", Recipient: "a@b.co"})
+	res, err := svc.Send(ctx, SendInput{TenantID: "t1", Recipient: "a@b.co"})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	in := VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: wrongCode(res.Code)}
 	for i := 0; i < 3; i++ {
-		if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: "000000"}); err != domain.ErrCodeMismatch {
+		if err := svc.Verify(ctx, in); err != domain.ErrCodeMismatch {
 			t.Fatalf("attempt %d want ErrCodeMismatch, got %v", i, err)
 		}
 	}
-	if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: "000000"}); err != domain.ErrTooManyAttempts {
+	if err := svc.Verify(ctx, in); err != domain.ErrTooManyAttempts {
 		t.Fatalf("want ErrTooManyAttempts after max, got %v", err)
 	}
 }
