@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: link-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: link-svc
+  ports:
+    - port: 8890
+      targetPort: 8890

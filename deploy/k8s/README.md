@@ -39,6 +39,21 @@ production secret.
       --docker-username=<github-user> \
       --docker-password=<github-pat-with-read:packages>
 
+### Link Service secrets
+
+Create `worklane-links` in the `worklane` namespace before applying the Link workloads.
+Generate each MySQL password independently with `openssl rand -hex 24` and capture the
+output without printing it.
+
+| Key | Value |
+| --- | --- |
+| `LINK_DB_ROOT_PASSWORD` | Root password for the dedicated `link-mysql` instance |
+| `LINK_DB_PASSWORD` | Password for the `links` database user |
+| `LINK_MYSQL_DSN` | `links:<LINK_DB_PASSWORD>@tcp(link-mysql:3306)/links` |
+
+The Link applications use the DSN for the `links` user. `link-svc` reads
+`INTERNAL_API_TOKEN` from `worklane-secrets` and mounts `auth_pub.pem` from `worklane-jwt`.
+
 ## 3. Deploy / rollback (prod)
 
 First bring-up (or any manual apply):
@@ -59,6 +74,12 @@ Roll back fast to the previous ReplicaSet:
 Roll back to a specific known-good SHA:
 
     deploy/scripts/rollback.sh <git-sha>
+
+Before the initial Link rollout, replace both temporary Link image tags in
+`overlays/prod/kustomization.yaml` with the published `sha-*` tags and matching
+GHCR digests. Apply the Link resources in order (`link-mysql`, `link-svc`,
+`link-dispatcher`, then middleware and routes) to preserve the running OTP and auth
+image versions. `link-svc` migrates the dedicated database before serving `/healthz`.
 
 ## 4. Seed a tenant/user/api-key (on demand)
 
@@ -81,6 +102,19 @@ Roll back to a specific known-good SHA:
     # Internal endpoint must NOT be routed:
     curl -s -o /dev/null -w "%{http_code}\n" \
       -X POST https://api.otp.<domain>/internal/introspect -d '{}'               # 404
+
+### Link production smoke
+
+After opening the routes, run `deploy/scripts/smoke-links.sh` manually with
+`LINK_SMOKE_API_KEY` exported from a dedicated smoke tenant. The script needs `curl` and
+`jq`. Its defaults are `LINK_SMOKE_API_BASE=https://api-otp.dikhanh.io.vn` and
+`LINK_SMOKE_PUBLIC_BASE=https://link.dikhanh.io.vn`. Optionally export
+`LINK_SMOKE_OTHER_API_KEY` from a different tenant for a read-only isolation check.
+
+Record the printed code with the rollout evidence. Each successful run leaves one
+disabled link and one recorded click in the smoke tenant. The detailed visit expires
+after 30 days and the aggregate remains. Production verification uses this manual
+smoke script. The Compose E2E and load suites are for disposable environments.
 
 ## Grafana Cloud secret (out-of-band)
 
@@ -116,9 +150,10 @@ Edit /etc/rancher/k3s/config.yaml on the node:
 
 Then: systemctl restart k3s
 
-Redpanda log retention is bounded in deploy/k8s/base/redpanda/statefulset.yaml
-(log_retention_ms=10m, retention_bytes=256MB) so the Kafka log cannot fill /var.
-MySQL's InnoDB buffer pool is pinned to 128M in deploy/k8s/base/mysql/statefulset.yaml.
+Redpanda defaults to 10 minutes and 256 MB per partition
+(`base/redpanda/statefulset.yaml`). `link-dispatcher` configures `link.clicked` to
+retain events for up to seven days, subject to the same 256 MB cap for its single
+partition. Both MySQL instances use a 128M InnoDB buffer pool.
 
 Alerting setup (Telegram + disk alert + uptime ping): see docs/runbooks/alerting.md
 
@@ -131,3 +166,16 @@ Alerting setup (Telegram + disk alert + uptime ping): see docs/runbooks/alerting
 - Before the first live apply, set the real `api.otp.<domain>` host in
   `overlays/prod/ingressroute.yaml` and the real Vercel origin in
   `base/ingress/middlewares.yaml`.
+
+## Link routing
+
+- `worklane-links-api` takes `/v1/links` and `/v1/links/*` on `api-otp.dikhanh.io.vn`
+  ahead of the generic OTP `/v1` route. It uses `otp-ratelimit` and `otp-cors`, which
+  exposes `Retry-After` to the dashboard.
+- `worklane-links-public` on `link.dikhanh.io.vn` serves `GET /healthz` and matches
+  `GET` and `HEAD` on one-segment alphanumeric paths of 1 to 11 characters, excluding
+  `/metrics`. The redirect rule needs Traefik v3 and limits requests per
+  `CF-Connecting-IP` (100 per second, burst 50). Confirm the Cloudflare Tunnel is the
+  sole inbound path to Traefik before exposing this route so that the header can be trusted.
+- Alloy scrapes `link-svc` on the declared port 8890 inside the cluster. See the
+  [deployment topology](../../docs/architecture.md#7-link-service-on-k3s).

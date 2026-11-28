@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: link-mysql
+spec:
+  serviceName: link-mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: link-mysql
+  template:
+    metadata:
+      labels:
+        app: link-mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          args:
+            - "--skip-log-bin" # lets the schema owner create triggers without global grants
+            - "--innodb-buffer-pool-size=128M"
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: worklane-links
+                  key: LINK_DB_ROOT_PASSWORD
+            - name: MYSQL_DATABASE
+              value: links
+            - name: MYSQL_USER
+              value: links
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: worklane-links
+                  key: LINK_DB_PASSWORD
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+          readinessProbe:
+            exec:
+              # TCP excludes the temporary server used during database initialization.
+              command: ["sh", "-c", "MYSQL_PWD=\"$MYSQL_PASSWORD\" mysql -h 127.0.0.1 -u links links -e 'SELECT 1'"]
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "512Mi" }
+            limits: { cpu: "500m", memory: "1Gi" }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

@@ -11,6 +11,12 @@ permissions:
   contents: read
 
 jobs:
+  prod-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: kubectl kustomize deploy/k8s/overlays/prod > /dev/null
+
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15

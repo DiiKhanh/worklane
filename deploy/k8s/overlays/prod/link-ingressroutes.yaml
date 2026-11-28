@@ -1,0 +1,39 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: worklane-links-api
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`api-otp.dikhanh.io.vn`) && (Path(`/v1/links`) || PathPrefix(`/v1/links/`))
+      kind: Rule
+      priority: 100 # higher than the default rule-length priority of worklane-api /v1
+      services:
+        - name: link-svc
+          port: 8890
+      middlewares:
+        - name: otp-ratelimit
+        - name: otp-cors
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: worklane-links-public
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`link.dikhanh.io.vn`) && Path(`/healthz`) && Method(`GET`)
+      kind: Rule
+      services:
+        - name: link-svc
+          port: 8890
+    - match: Host(`link.dikhanh.io.vn`) && PathRegexp(`^/[0-9A-Za-z]{1,11}$`) && !Path(`/metrics`) && (Method(`GET`) || Method(`HEAD`))
+      kind: Rule
+      priority: 1 # the exact GET /healthz route takes precedence
+      services:
+        - name: link-svc
+          port: 8890
+      middlewares:
+        - name: link-redirect-ratelimit
