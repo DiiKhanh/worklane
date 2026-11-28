@@ -4,6 +4,8 @@
 entryPoints:
   web:
     address: ":80"
+    forwardedHeaders:
+      insecure: false # No upstream proxy is trusted on the local ingress.
 
 api:
   dashboard: true
