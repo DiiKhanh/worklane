@@ -10,21 +10,48 @@ import (
 	"github.com/duykhanh/worklane/services/otp-api/internal/domain"
 )
 
-type fakeStore struct{ m map[string]CodeRecord }
+// fakeStore models Redis key expiry against clock, so tests can observe a code's
+// lifetime the way the real adapter enforces it.
+type fakeStore struct {
+	m     map[string]CodeRecord
+	exp   map[string]time.Time
+	clock Clock
+}
 
-func newFakeStore() *fakeStore { return &fakeStore{m: map[string]CodeRecord{}} }
-func (f *fakeStore) Save(_ context.Context, k string, r CodeRecord, _ time.Duration) error {
+func newFakeStore(clock Clock) *fakeStore {
+	return &fakeStore{m: map[string]CodeRecord{}, exp: map[string]time.Time{}, clock: clock}
+}
+func (f *fakeStore) Save(_ context.Context, k string, r CodeRecord, ttl time.Duration) error {
 	f.m[k] = r
+	f.exp[k] = f.clock.Now().Add(ttl)
 	return nil
 }
 func (f *fakeStore) Get(_ context.Context, k string) (CodeRecord, error) {
+	f.expire(k)
 	r, ok := f.m[k]
 	if !ok {
 		return CodeRecord{}, domain.ErrNotFound
 	}
 	return r, nil
 }
+func (f *fakeStore) IncrAttempts(_ context.Context, k string) (int, error) {
+	f.expire(k)
+	r, ok := f.m[k]
+	if !ok {
+		return 0, domain.ErrNotFound
+	}
+	r.Attempts++
+	f.m[k] = r // expiry deadline untouched, like Redis KEEPTTL
+	return r.Attempts, nil
+}
 func (f *fakeStore) Delete(_ context.Context, k string) error { delete(f.m, k); return nil }
+
+func (f *fakeStore) expire(k string) {
+	if deadline, ok := f.exp[k]; ok && !f.clock.Now().Before(deadline) {
+		delete(f.m, k)
+		delete(f.exp, k)
+	}
+}
 
 type fakeRepo struct {
 	states     map[string]string
@@ -62,12 +89,22 @@ type fixedClock struct{ t time.Time }
 
 func (c fixedClock) Now() time.Time { return c.t }
 
+// manualClock is a clock tests can move forward to cross TTL boundaries.
+type manualClock struct{ t time.Time }
+
+func (c *manualClock) Now() time.Time          { return c.t }
+func (c *manualClock) Advance(d time.Duration) { c.t = c.t.Add(d) }
+
 func newSvc() (*Service, *fakeRepo, *fakePub) {
+	return newSvcWithClock(&manualClock{t: time.Unix(1000, 0)})
+}
+
+func newSvcWithClock(clock *manualClock) (*Service, *fakeRepo, *fakePub) {
 	repo := newFakeRepo()
 	pub := &fakePub{}
 	svc := New(Deps{
-		Store: newFakeStore(), Counter: newFakeCounter(), Repo: repo,
-		Pub: pub, Clock: fixedClock{t: time.Unix(1000, 0)},
+		Store: newFakeStore(clock), Counter: newFakeCounter(), Repo: repo,
+		Pub: pub, Clock: clock,
 	}, Config{
 		CodeLength: 6, TTL: 5 * time.Minute, MaxVerifyAttempts: 3, RequestedTopic: "otp.requested",
 		Limits: LimitConfig{PerRecipientMax: 5, PerRecipientWindow: time.Hour,
@@ -175,6 +212,53 @@ func TestVerify_WrongCode_LocksAfterMax(t *testing.T) {
 	}
 }
 
+// A code's lifetime is fixed at issuance: a wrong guess must not restart the TTL, or
+// an attacker (or a confused user) could keep a code alive indefinitely.
+func TestVerify_WrongAttempt_DoesNotExtendExpiry(t *testing.T) {
+	clock := &manualClock{t: time.Unix(1000, 0)}
+	svc, _, _ := newSvcWithClock(clock) // TTL 5m
+	ctx := context.Background()
+	res, err := svc.Send(ctx, SendInput{TenantID: "t1", Recipient: "a@b.co"})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	clock.Advance(4 * time.Minute)
+	if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: wrongCode(res.Code)}); err != domain.ErrCodeMismatch {
+		t.Fatalf("wrong guess want ErrCodeMismatch, got %v", err)
+	}
+
+	clock.Advance(time.Minute) // exactly issuance + TTL
+	if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: res.Code}); err != domain.ErrNotFound {
+		t.Fatalf("code must expire at issuance+TTL despite the wrong guess, got %v", err)
+	}
+}
+
+func TestVerify_WrongAttempt_CountSurvivesWithinLifetime(t *testing.T) {
+	clock := &manualClock{t: time.Unix(1000, 0)}
+	svc, _, _ := newSvcWithClock(clock) // TTL 5m, 3 attempts
+	ctx := context.Background()
+	res, _ := svc.Send(ctx, SendInput{TenantID: "t1", Recipient: "a@b.co"})
+	for i := 0; i < 3; i++ {
+		clock.Advance(time.Minute)
+		if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: wrongCode(res.Code)}); err != domain.ErrCodeMismatch {
+			t.Fatalf("attempt %d want ErrCodeMismatch, got %v", i, err)
+		}
+	}
+	clock.Advance(time.Minute) // 4m after issuance: still alive, but locked
+	if err := svc.Verify(ctx, VerifyInput{TenantID: "t1", Recipient: "a@b.co", Code: res.Code}); err != domain.ErrTooManyAttempts {
+		t.Fatalf("want ErrTooManyAttempts before expiry, got %v", err)
+	}
+}
+
+// wrongCode returns a same-length code guaranteed to differ from code.
+func wrongCode(code string) string {
+	if code[0] == '0' {
+		return "1" + code[1:]
+	}
+	return "0" + code[1:]
+}
+
 func TestVerify_NoActiveCode(t *testing.T) {
 	svc, _, _ := newSvc()
 	if err := svc.Verify(context.Background(), VerifyInput{TenantID: "t1", Recipient: "x@y.co", Code: "111111"}); err != domain.ErrNotFound {
@@ -184,9 +268,10 @@ func TestVerify_NoActiveCode(t *testing.T) {
 
 func TestSend_RateLimited(t *testing.T) {
 	repo := newFakeRepo()
+	clock := fixedClock{t: time.Unix(1000, 0)}
 	svc := New(Deps{
-		Store: newFakeStore(), Counter: newFakeCounter(), Repo: repo, Pub: &fakePub{},
-		Clock: fixedClock{t: time.Unix(1000, 0)},
+		Store: newFakeStore(clock), Counter: newFakeCounter(), Repo: repo, Pub: &fakePub{},
+		Clock: clock,
 	}, Config{
 		CodeLength: 6, TTL: time.Minute, MaxVerifyAttempts: 3, RequestedTopic: "otp.requested",
 		Limits: LimitConfig{PerRecipientMax: 1, PerRecipientWindow: time.Hour,

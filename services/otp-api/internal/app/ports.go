@@ -52,8 +52,13 @@ type Clock interface{ Now() time.Time }
 
 // CodeStore is the hot OTP state (Redis): hash + salt + attempts, TTL-bound.
 type CodeStore interface {
+	// Save writes a record with a fresh lifetime of ttl. Only issuing a code may do this.
 	Save(ctx context.Context, key string, rec CodeRecord, ttl time.Duration) error
 	Get(ctx context.Context, key string) (CodeRecord, error)
+	// IncrAttempts atomically adds one failed attempt to an existing record and returns
+	// the new count. It keeps the record's remaining lifetime unchanged and returns
+	// domain.ErrNotFound instead of recreating a record that has already expired.
+	IncrAttempts(ctx context.Context, key string) (int, error)
 	Delete(ctx context.Context, key string) error
 }
 

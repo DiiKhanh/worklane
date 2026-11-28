@@ -54,6 +54,35 @@ func (s *Store) Get(ctx context.Context, key string) (app.CodeRecord, error) {
 	return rec, nil
 }
 
+// incrAttemptsScript bumps Attempts inside the stored JSON in one atomic step. Running
+// it server-side closes two races a client-side GET+SET would have: concurrent wrong
+// guesses cannot overwrite each other's count, and a key that expires between the read
+// and the write is not recreated. KEEPTTL (Redis 6+) preserves the remaining lifetime,
+// so the code still expires at issuance + TTL.
+var incrAttemptsScript = goredis.NewScript(`
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+  return false
+end
+local rec = cjson.decode(raw)
+rec.Attempts = (rec.Attempts or 0) + 1
+redis.call('SET', KEYS[1], cjson.encode(rec), 'KEEPTTL')
+return rec.Attempts
+`)
+
+// IncrAttempts records one failed verify attempt without extending the code's TTL.
+// A missing (expired or deleted) key yields domain.ErrNotFound.
+func (s *Store) IncrAttempts(ctx context.Context, key string) (int, error) {
+	n, err := incrAttemptsScript.Run(ctx, s.c, []string{key}).Int()
+	if errors.Is(err, goredis.Nil) {
+		return 0, domain.ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("redis: incr attempts: %w", err)
+	}
+	return n, nil
+}
+
 func (s *Store) Delete(ctx context.Context, key string) error {
 	if err := s.c.Del(ctx, key).Err(); err != nil {
 		return fmt.Errorf("redis: delete: %w", err)

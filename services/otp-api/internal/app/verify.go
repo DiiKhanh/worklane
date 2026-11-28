@@ -33,9 +33,10 @@ func (s *Service) Verify(ctx context.Context, in VerifyInput) error {
 		// Count the failed attempt and persist it, so the cap survives across requests.
 		// The wrong guess itself always returns a mismatch (the caller used a valid try);
 		// the lock is enforced by the guard above on the NEXT call once the cap is hit -
-		// after which even the correct code is rejected.
-		rec.Attempts++
-		_ = s.d.Store.Save(ctx, key, rec, s.cfg.TTL)
+		// after which even the correct code is rejected. IncrAttempts keeps the code's
+		// expiry fixed at issuance: re-saving with the full TTL here would let every wrong
+		// guess extend the code's lifetime.
+		_, _ = s.d.Store.IncrAttempts(ctx, key)
 		return domain.ErrCodeMismatch
 	}
 	// Success: delete the code so it cannot be reused, then record the verified state.
