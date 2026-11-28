@@ -4,6 +4,7 @@ package redisstore_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -64,6 +65,84 @@ func TestStore_SaveGetDelete(t *testing.T) {
 	}
 	if _, err := s.Get(ctx, "otp:code:t1:a@b.co"); err != domain.ErrNotFound {
 		t.Fatalf("get after delete want ErrNotFound, got %v", err)
+	}
+}
+
+// A wrong guess must not extend a code's lifetime: the absolute expiry set at issuance
+// stays exactly where it was after the attempt is recorded.
+func TestStore_IncrAttempts_KeepsExpiryFixed(t *testing.T) {
+	s, client := newStore(t)
+	ctx := context.Background()
+	const key = "otp:code:t1:a@b.co"
+	rec := app.CodeRecord{Hash: "h", Salt: "req-1"}
+	if err := s.Save(ctx, key, rec, 5*time.Minute); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	before := client.PExpireTime(ctx, key).Val()
+	// Let time pass so a TTL reset would land on a visibly later deadline.
+	time.Sleep(50 * time.Millisecond)
+
+	n, err := s.IncrAttempts(ctx, key)
+	if err != nil {
+		t.Fatalf("incr attempts: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("first failed attempt want count 1, got %d", n)
+	}
+	if after := client.PExpireTime(ctx, key).Val(); after != before {
+		t.Fatalf("expiry moved from %v to %v; attempts must not extend the code's lifetime", before, after)
+	}
+	got, err := s.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if want := (app.CodeRecord{Hash: "h", Salt: "req-1", Attempts: 1}); got != want {
+		t.Fatalf("record after incr = %+v, want %+v", got, want)
+	}
+}
+
+func TestStore_IncrAttempts_ExpiredKeyIsNotRecreated(t *testing.T) {
+	s, client := newStore(t)
+	ctx := context.Background()
+	const key = "otp:code:t1:a@b.co"
+	if err := s.Save(ctx, key, app.CodeRecord{Hash: "h", Salt: "req-1"}, 50*time.Millisecond); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	time.Sleep(150 * time.Millisecond)
+
+	if _, err := s.IncrAttempts(ctx, key); err != domain.ErrNotFound {
+		t.Fatalf("incr on expired code want ErrNotFound, got %v", err)
+	}
+	if n := client.Exists(ctx, key).Val(); n != 0 {
+		t.Fatal("incr must not resurrect an expired code")
+	}
+}
+
+func TestStore_IncrAttempts_ConcurrentAttemptsAllCount(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := context.Background()
+	const key = "otp:code:t1:a@b.co"
+	if err := s.Save(ctx, key, app.CodeRecord{Hash: "h", Salt: "req-1"}, time.Minute); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	const attempts = 20
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.IncrAttempts(ctx, key); err != nil {
+				t.Errorf("incr attempts: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	got, err := s.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Attempts != attempts {
+		t.Fatalf("concurrent attempts lost updates: got %d want %d", got.Attempts, attempts)
 	}
 }
 

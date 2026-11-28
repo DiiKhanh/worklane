@@ -468,14 +468,14 @@ verify:
   GET otp:code:<tenant>:<recipient>
   hash submitted code with salt
   if correct: DEL key
-  if wrong: attempts++ and SET again with TTL
+  if wrong: attempts++ in a Lua script, SET ... KEEPTTL (expiry stays fixed)
 ```
 
 Pitfalls:
 
 - If Redis loses the key, the OTP is treated as expired/missing.
 - The current key includes the raw recipient. If production privacy requirements are stricter, hash the recipient in the key.
-- `Verify` saves the record again with the full TTL after a wrong attempt, which can reset the TTL. If absolute expiry is required, preserve the remaining TTL when updating attempts.
+- A wrong attempt must not reset the TTL, or each guess would extend the code's lifetime. `IncrAttempts` bumps the count server-side with `SET ... KEEPTTL`, so the code still expires at issuance + TTL, concurrent guesses cannot lose a count, and an already-expired key is not recreated.
 
 #### 2. Idempotency marker
 
