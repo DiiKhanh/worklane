@@ -4,12 +4,12 @@ package http_test
 
 import (
 	"net/http"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	linkhttp "github.com/duykhanh/worklane/services/link-svc/internal/adapters/inbound/http"
+	"github.com/duykhanh/worklane/services/link-svc/internal/domain"
 )
 
 func TestManagementLifecycle(t *testing.T) {
@@ -25,7 +25,6 @@ func TestManagementLifecycle(t *testing.T) {
 		t.Fatalf("dedup changed identity: %+v", dedup)
 	}
 	path := "/v1/links/" + created.Code
-	readResponse[linkhttp.ErrorResponse](t, f.request(t, "GET", "/v1/links/"+strings.ToUpper(created.Code), token, nil), 404)
 	metadata := readResponse[linkhttp.Metadata](t, f.request(t, "GET", path, token, nil), 200)
 	if metadata.LongURL != destination || metadata.State != "active" || metadata.DisabledAt != nil || metadata.CreatedAt.IsZero() || metadata.ShortURL != created.ShortURL {
 		t.Fatalf("invalid metadata: %+v", metadata)
@@ -60,6 +59,17 @@ func TestManagementLifecycle(t *testing.T) {
 	if len(retained.Items) != 1 || retained.Items[0].State != "disabled" {
 		t.Fatalf("disable removed history: %+v", retained)
 	}
+
+	t.Run("case-sensitive lookup", func(t *testing.T) {
+		// Generated codes can already be uppercase or contain only digits.
+		if _, err := f.repo.Insert(t.Context(), domain.Link{
+			ID: 10, Code: "a", TenantID: f.tenant, LongURL: "https://case.example/",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		readResponse[linkhttp.ErrorResponse](t, f.request(t, "GET", "/v1/links/A", token, nil), 404)
+		readResponse[linkhttp.Metadata](t, f.request(t, "GET", "/v1/links/a", token, nil), 200)
+	})
 }
 
 func TestManagementTenantIsolationAndConcurrentDedup(t *testing.T) {
